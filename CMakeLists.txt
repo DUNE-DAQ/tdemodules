@@ -17,7 +17,9 @@ daq_setup_environment()
 
 find_package(appfwk REQUIRED)
 find_package(opmonlib REQUIRED)
-find_package(Boost COMPONENTS unit_test_framework REQUIRED)
+# find_package(Boost COMPONENTS unit_test_framework REQUIRED)
+find_package(Boost COMPONENTS system REQUIRED)
+find_package(fmt REQUIRED)
 
 ##############################################################################
 
@@ -31,7 +33,7 @@ daq_protobuf_codegen(opmon/*.proto)
 
 # See https://dune-daq-sw.readthedocs.io/en/latest/packages/daq-cmake/#daq_add_library
 
-daq_add_library( LINK_LIBRARIES opmonlib::opmonlib) # We need to link in the opmonlib library for Protobuf-generated code to compile
+daq_add_library( *.cpp LINK_LIBRARIES Boost::system opmonlib::opmonlib fmt::fmt) 
 
 ##############################################################################
 
