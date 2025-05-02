@@ -36,6 +36,10 @@ AMCProtocolClient::send_request(TFTPOpCode opcode, const std::vector<uint8_t>& p
     append_big_uint16(request, opcode);
     request.insert( request.end(), payload.begin(), payload.end());
 
+
+    for (size_t i = 0; i < request.size(); ++i) {
+        printf("%02x ", static_cast<uint8_t>(request[i]));
+    }
     m_socket.send_to(boost::asio::buffer(request), m_server_endpoint);
 
     std::vector<uint8_t> reply(516); // TFTP packets max ~516 bytes

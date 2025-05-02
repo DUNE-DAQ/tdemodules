@@ -16,7 +16,7 @@
 
 namespace dunedaq::tdemodules::python {
 
-  void register_renameme(pybind11::module&);
+  void register_amc(pybind11::module&);
 
 }
 

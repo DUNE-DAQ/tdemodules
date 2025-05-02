@@ -13,12 +13,12 @@ class AMCController {
   public:
   
     enum CmdCode :  uint32_t {
-      kCmdStart=0,
-      kCmdStop =1,
+      kCmdStop =0,
+      kCmdStart=1,
       kCmdReset=4
     };
   
-    AMCController(const std::string& ip, uint16_t port);
+    AMCController(const std::string& ip, uint16_t data_port);
   
     void card_start();
     void card_stop();
@@ -27,7 +27,9 @@ class AMCController {
   
   private:
     std::string m_ctrl_ip;
-    uint16_t m_ctrl_port;
+    uint16_t m_ctrl_port = 325;
+    uint16_t m_data_port;
+
   
     std::vector<uint8_t> m_status_cmd;
     std::vector<uint8_t> m_start_cmd;

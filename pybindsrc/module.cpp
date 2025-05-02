@@ -23,7 +23,7 @@ PYBIND11_MODULE(_daq_tdemodules_py, m)
   // You'd want to change renameme to the name of a function which
   // you'd like to have a python binding to
 
-  register_renameme(m);
+  register_amc(m);
 }
 
 } // namespace dunedaq::tdemodules::python

@@ -9,30 +9,31 @@ namespace dunedaq {
 namespace tdemodules {
 
 
-AMCController::AMCController(const std::string& ip, uint16_t port) :
+AMCController::AMCController(const std::string& ip, uint16_t data_port) :
 m_ctrl_ip(ip),
-m_ctrl_port(port) {
+m_data_port(data_port) {
 
 // Initialize status command payload
+m_status_cmd.clear();
 append_big_uint32(m_status_cmd, 0x0);
 append_big_uint32(m_status_cmd, 0x0);
 
 // Initialise start command payload
-append_big_uint32(m_start_cmd, port);
+append_big_uint32(m_start_cmd, data_port);
 append_big_uint32(m_start_cmd, kCmdStart);
 append_big_uint32(m_start_cmd, 0x0);
 append_big_uint32(m_start_cmd, 0x0);
 
 
 // Initialise stop command payload
-append_big_uint32(m_stop_cmd, port);
+append_big_uint32(m_stop_cmd, data_port);
 append_big_uint32(m_stop_cmd, kCmdStop);
 append_big_uint32(m_stop_cmd, 0x0);
 append_big_uint32(m_stop_cmd, 0x0);
 
 
 // Initialise reset command payload
-append_big_uint32(m_reset_cmd, port);
+append_big_uint32(m_reset_cmd, data_port);
 append_big_uint32(m_reset_cmd, kCmdReset);
 append_big_uint32(m_reset_cmd, 0x0);
 append_big_uint32(m_reset_cmd, 0x0);
