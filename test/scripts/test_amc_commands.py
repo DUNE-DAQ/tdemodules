@@ -13,14 +13,14 @@ def main():
     slot_id = 1
 
     amc_ctrl_ip = f"10.73.{crate_id+32}.{slot_id+1}"
-    amc_ctrl_port = 54321+(slot_id+1)
-    c = tdemodules.AMCController(amc_ctrl_ip, amc_ctrl_port)
+    amc_data_port = 54321+(slot_id+1)
+    c = tdemodules.AMCController(amc_ctrl_ip, amc_data_port)
     print(f"Reading status of card {amc_ctrl_ip} (crate {crate_id}, slot {slot_id})")
     c.card_status()
 
     print(f"starting card {slot_id}")
     c.card_start()
-    print("Waiging")
+    print("Waiting")
     for i in range(5):
         time.sleep(10)
         print(f"-- {i*10} s elapsed")
