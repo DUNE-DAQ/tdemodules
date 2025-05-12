@@ -64,36 +64,6 @@ AMCProtocolClient::send_request(TFTPOpCode opcode, const std::vector<uint8_t>& p
     if (len < 4) {
         throw AMCProtocolIssue(ERS_HERE, m_log_prefix, "Invalid TFTP reply: too short");
     }
-
-    // uint16_t response_opcode = (static_cast<uint8_t>(reply[0]) << 8) | static_cast<uint8_t>(reply[1]);
-
-    // if (response_opcode == DAT) {
-    //     // printf("\nReceived reply: ");
-    //     // for (size_t i = 0; i < len; ++i) {
-    //     //     printf("%02x ", static_cast<unsigned uint8_t>(reply[i]));
-    //     // }
-    //     // DATA packet
-    //     // Data starts at byte 3
-    //     reply.resize(len);
-    //     // Remove opcode
-    //     reply.erase(reply.begin(), reply.begin() + 2);
-    //     printf("\nReceived payload: ");
-    //     for (size_t i = 0; i < reply.size(); ++i) {
-    //         printf("%02x ", static_cast<uint8_t>(reply[i]));
-    //     }
-
-    // } else if (response_opcode == ACK) {
-    //   // Do nothing
-    // } else if (response_opcode == ERR) {
-    //     // ERROR packet
-    //     throw std::runtime_error("TFTP server error: " + std::string(reply.begin() + 4, reply.end()));
-    // } else {
-    //     throw std::runtime_error("Unexpected TFTP opcode: " + std::to_string(response_opcode));
-    // }
-
-    // return reply;
-
-
     if (reply.size() < 4)
         throw std::runtime_error("Packet too short to be valid");
 
@@ -128,10 +98,7 @@ AMCProtocolClient::send_request(TFTPOpCode opcode, const std::vector<uint8_t>& p
             TFTP_Ack_Header header;
             std::memcpy(&header, reply.data(), sizeof(header));
 
-            ers::info(AMCResponseACK(ERS_HERE, m_log_prefix, static_cast<uint16_t>(header.block)));
-            // fmt::print("Received ACK packet:\n");
-            // fmt::print("  Block #: {}\n", static_cast<uint16_t>(header.block));
-            
+            ers::info(AMCResponseACK(ERS_HERE, m_log_prefix, static_cast<uint16_t>(header.block)));            
             return {};
         }
 
@@ -143,16 +110,11 @@ AMCProtocolClient::send_request(TFTPOpCode opcode, const std::vector<uint8_t>& p
                                   reply.size() - sizeof(header));
 
             ers::error(AMCResponseErr(ERS_HERE, m_log_prefix, static_cast<uint16_t>(header.error_code), error_msg));
-            // fmt::print("Received ERROR packet:\n");
-            // fmt::print("  Error code: {}\n", static_cast<uint16_t>(header.error_code));
-            // fmt::print("  Message: {}\n", error_msg);
-            
             return {};
         }
 
         default:
             ers::error(AMCUnknownOpCode(ERS_HERE, m_log_prefix, static_cast<uint16_t>(opcode)));
-            // fmt::print("Unsupported or unexpected opcode: {}\n", static_cast<uint16_t>(opcode));
 
         return {};
     }
