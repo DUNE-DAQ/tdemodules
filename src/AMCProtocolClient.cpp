@@ -1,7 +1,10 @@
 #include "tdemodules/AMCProtocolClient.hpp"
 
+#include <boost/lexical_cast.hpp>
 #include <fmt/ranges.h>
 #include "utilities.hpp"
+
+#include "logging/Logging.hpp"
 
 namespace dunedaq {
 namespace tdemodules {
@@ -55,11 +58,11 @@ AMCProtocolClient::send_request(TFTPOpCode opcode, const std::vector<uint8_t>& p
     }
 
     if (ec) {
-        throw std::runtime_error("TFTP receive error: " + ec.message());
+        throw AMCProtocolIssue(ERS_HERE, m_log_prefix, "TFTP receive error: " + ec.message());
     }
 
     if (len < 4) {
-        throw std::runtime_error("Invalid TFTP reply: too short");
+        throw AMCProtocolIssue(ERS_HERE, m_log_prefix, "Invalid TFTP reply: too short");
     }
 
     // uint16_t response_opcode = (static_cast<uint8_t>(reply[0]) << 8) | static_cast<uint8_t>(reply[1]);
@@ -104,14 +107,15 @@ AMCProtocolClient::send_request(TFTPOpCode opcode, const std::vector<uint8_t>& p
     switch (rpl_opcode) {
         case TFTPOpCode::DAT: {
             if (reply.size() < sizeof(TFTP_Data_Header))
-                throw std::runtime_error("Incomplete DATA packet");
+                throw AMCProtocolIssue(ERS_HERE, m_log_prefix, "Incomplete DATA packet");
 
             TFTP_Data_Header header;
             std::memcpy(&header, reply.data(), sizeof(header));
 
-            fmt::print("Received DATA packet:\n");
-            fmt::print("  Block #: {}\n", static_cast<uint16_t>(header.block));
-            fmt::print("  Payload size: {} bytes\n", reply.size() - sizeof(header));
+            TLOG() << "Received DATA packet:\n" <<
+                        "  Block #: "<< static_cast<uint16_t>(header.block) << "\n" <<
+                        "  Payload size: "<< reply.size() - sizeof(header) <<" bytes\n"; 
+
             // Data starts at byte 3
             reply.resize(len);
             // Remove opcode
@@ -124,8 +128,9 @@ AMCProtocolClient::send_request(TFTPOpCode opcode, const std::vector<uint8_t>& p
             TFTP_Ack_Header header;
             std::memcpy(&header, reply.data(), sizeof(header));
 
-            fmt::print("Received ACK packet:\n");
-            fmt::print("  Block #: {}\n", static_cast<uint16_t>(header.block));
+            ers::info(AMCResponseACK(ERS_HERE, m_log_prefix, static_cast<uint16_t>(header.block)));
+            // fmt::print("Received ACK packet:\n");
+            // fmt::print("  Block #: {}\n", static_cast<uint16_t>(header.block));
             
             return {};
         }
@@ -137,15 +142,17 @@ AMCProtocolClient::send_request(TFTPOpCode opcode, const std::vector<uint8_t>& p
             std::string error_msg(reinterpret_cast<const char*>(reply.data() + sizeof(header)),
                                   reply.size() - sizeof(header));
 
-            fmt::print("Received ERROR packet:\n");
-            fmt::print("  Error code: {}\n", static_cast<uint16_t>(header.error_code));
-            fmt::print("  Message: {}\n", error_msg);
+            ers::error(AMCResponseErr(ERS_HERE, m_log_prefix, static_cast<uint16_t>(header.error_code), error_msg));
+            // fmt::print("Received ERROR packet:\n");
+            // fmt::print("  Error code: {}\n", static_cast<uint16_t>(header.error_code));
+            // fmt::print("  Message: {}\n", error_msg);
             
             return {};
         }
 
         default:
-            fmt::print("Unsupported or unexpected opcode: {}\n", static_cast<uint16_t>(opcode));
+            ers::error(AMCUnknownOpCode(ERS_HERE, m_log_prefix, static_cast<uint16_t>(opcode)));
+            // fmt::print("Unsupported or unexpected opcode: {}\n", static_cast<uint16_t>(opcode));
 
         return {};
     }
