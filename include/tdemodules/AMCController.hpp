@@ -19,7 +19,7 @@ class AMCController {
     };
   
     AMCController(const std::string& ip, uint16_t data_port);
-  
+
     void card_start();
     void card_stop();
     void card_status();

@@ -12,6 +12,7 @@
 #define TDEMODULES_PLUGINS_TDEAMCMODULE_HPP_
 
 #include "appfwk/DAQModule.hpp"
+#include "tdemodules/AMCController.hpp"
 
 #include <atomic>
 #include <limits>
@@ -48,6 +49,8 @@ private:
   // an argument and originating from the CCM system.
 
   void do_conf(const data_t&);
+  void do_start(const data_t&);
+  void do_stop(const data_t&);
 
   // TO tdemodules DEVELOPERS: PLEASE DELETE THIS FOLLOWING COMMENT AFTER READING IT 
   // m_total_amount and m_amount_since_last_get_info_call are examples
@@ -57,6 +60,7 @@ private:
   // runs and whose value we'd like to keep track of during running;
   // obviously you'd want to replace this "in real life"
 
+  std::unique_ptr<AMCController> m_ctrl;
   std::atomic<int64_t> m_total_amount {0};
   std::atomic<int>     m_amount_since_last_call {0};
 };
