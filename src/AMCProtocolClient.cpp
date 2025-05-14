@@ -39,10 +39,12 @@ AMCProtocolClient::send_request(TFTPOpCode opcode, const std::vector<uint8_t>& p
     append_big_uint16(request, opcode);
     request.insert( request.end(), payload.begin(), payload.end());
 
-
+    std::stringstream request_str;
     for (size_t i = 0; i < request.size(); ++i) {
-        printf("%02x ", static_cast<uint8_t>(request[i]));
+        request_str << std::setfill('0') << std::setw(2) << std::hex << +request[i] << " ";
     }
+    TLOG() << "sending request to AMC: " << request_str.str();
+
     m_socket.send_to(boost::asio::buffer(request), m_server_endpoint);
 
     std::vector<uint8_t> reply(516); // TFTP packets max ~516 bytes

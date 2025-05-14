@@ -5,7 +5,17 @@
 #include <cstdint>
 #include <string>
 
+#include "logging/Logging.hpp"
+
 namespace dunedaq {
+
+ERS_DECLARE_ISSUE(
+    tdemodules, 
+    AMCCommandIssue,
+    "AMC with ip:" + ip + " and port: " << port << " | " << "send command failed, reason: " << text,
+    ((std::string)ip)((uint16_t)port)((std::string)text)
+);
+
 namespace tdemodules {
 
 
@@ -36,7 +46,7 @@ class AMCController {
     std::vector<uint8_t> m_stop_cmd;
     std::vector<uint8_t> m_reset_cmd;
   
-  
+    std::vector<uint8_t> send_cmd(const std::vector<uint8_t>& cmd);  
   };
         
 
