@@ -21,13 +21,6 @@ ERS_DECLARE_ISSUE(
 
 ERS_DECLARE_ISSUE(
     tdemodules, 
-    AMCResponseACK,
-    prefix << "Recieved Ack packet:" << "\n" << block,
-    ((std::string)prefix)((uint16_t)block)
-);
-
-ERS_DECLARE_ISSUE(
-    tdemodules, 
     AMCResponseErr,
     prefix << "Received Error packet:" << "\n" << "Error code:" << code << "\nMessage: " << text,
     ((std::string)prefix)((uint16_t)code)((std::string)text)

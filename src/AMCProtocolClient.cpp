@@ -100,7 +100,7 @@ AMCProtocolClient::send_request(TFTPOpCode opcode, const std::vector<uint8_t>& p
             TFTP_Ack_Header header;
             std::memcpy(&header, reply.data(), sizeof(header));
 
-            ers::info(AMCResponseACK(ERS_HERE, m_log_prefix, static_cast<uint16_t>(header.block)));            
+            TLOG() << m_log_prefix << "Recieved Ack packet:\n" << static_cast<uint16_t>(header.block);
             return {};
         }
 
