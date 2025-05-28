@@ -7,7 +7,32 @@
 #include <boost/endian/arithmetic.hpp>
 #include <boost/asio.hpp>
 
+#include "logging/Logging.hpp"
+
 namespace dunedaq {
+
+
+ERS_DECLARE_ISSUE(
+    tdemodules, 
+    AMCProtocolIssue,
+    prefix << "AMCProtocolResponse: " << text,
+    ((std::string)prefix)((std::string)text)
+);
+
+ERS_DECLARE_ISSUE(
+    tdemodules, 
+    AMCResponseErr,
+    prefix << "Received Error packet:" << "\n" << "Error code:" << code << "\nMessage: " << text,
+    ((std::string)prefix)((uint16_t)code)((std::string)text)
+);
+
+ERS_DECLARE_ISSUE(
+    tdemodules, 
+    AMCUnknownOpCode,
+    prefix << "Unknown opcode recived: " << opcode,
+    ((std::string)prefix)((uint16_t)opcode)
+);
+
 namespace tdemodules {
 
 class AMCProtocolClient {
@@ -58,6 +83,8 @@ class AMCProtocolClient {
     uint16_t m_port;
     uint16_t m_timeout;
   
+    const std::string m_log_prefix = "AMC with ip:" + m_host + " and port: " + std::to_string(m_port) + " | ";
+
     boost::asio::io_context m_io_context;
     boost::asio::ip::udp::socket m_socket;
     boost::asio::ip::udp::endpoint m_server_endpoint;

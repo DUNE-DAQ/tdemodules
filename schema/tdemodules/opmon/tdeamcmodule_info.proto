@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package dunedaq.tdemodules.opmon;
 
-message TDEAmcModuleInfo {
+message TDEAMCModuleInfo {
 
   uint64 total_amount = 1;
   uint32 amount_since_last_call = 2;

@@ -5,6 +5,8 @@
 #include <iostream>
 #include <fmt/core.h>
 
+#include "logging/Logging.hpp"
+
 namespace dunedaq {
 namespace tdemodules {
 
@@ -40,65 +42,43 @@ append_big_uint32(m_reset_cmd, 0x0);
 
 }
 
-void
-AMCController::card_reset() {
-std::vector<uint8_t> reply;
-try {
-
-    auto client = AMCProtocolClient(m_ctrl_ip, m_ctrl_port);
-
-    reply = client.send_wrq(m_reset_cmd);
-
-} catch (const std::exception& e) {
-    std::cerr << "Exception: " << e.what() << "\n";
+std::vector<uint8_t> AMCController::send_cmd(const std::vector<uint8_t>& cmd) {
+  std::vector<uint8_t> reply;
+  try {
+  
+      auto client = AMCProtocolClient(m_ctrl_ip, m_ctrl_port);
+  
+      reply = client.send_wrq(cmd);
+  
+  } catch (const std::exception& e) {
+    ers::error(AMCCommandIssue(ERS_HERE, m_ctrl_ip, m_data_port, e.what()));
+    //   std::cerr << "Exception: " << e.what() << "\n";
+  }
+  return reply;
 }
 
-
+void
+AMCController::card_reset() {
+  send_cmd(m_reset_cmd);
 }
 
 void
 AMCController::card_start() {
-
-std::vector<uint8_t> reply;
-try {
-
-    auto client = AMCProtocolClient(m_ctrl_ip, m_ctrl_port);
-
-    reply = client.send_wrq(m_start_cmd);
-
-} catch (const std::exception& e) {
-    std::cerr << "Exception: " << e.what() << "\n";
-}
-
-// 
+  send_cmd(m_start_cmd);
 }
 
 void
 AMCController::card_stop() {
-std::vector<uint8_t> reply;
-try {
-
-  auto client = AMCProtocolClient(m_ctrl_ip, m_ctrl_port);
-
-  reply = client.send_wrq(m_stop_cmd);
-
-} catch (const std::exception& e) {
-  std::cerr << "Exception: " << e.what() << "\n";
-}
+  send_cmd(m_stop_cmd);
 }
 
 void
 AMCController::card_status() {
+  std::vector<uint8_t> reply = send_cmd(m_status_cmd);
 
-  std::vector<uint8_t> reply;
-  try {
-
-      auto client = AMCProtocolClient(m_ctrl_ip, m_ctrl_port);
-
-      reply = client.send_rrq(m_status_cmd);
-
-  } catch (const std::exception& e) {
-      std::cerr << "Exception: " << e.what() << "\n";
+  if (reply.empty()) {
+    TLOG() << "No reply from the AMC.";
+    return;
   }
 
   // Take the first 4 bytes 
