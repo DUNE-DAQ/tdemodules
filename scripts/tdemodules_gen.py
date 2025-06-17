@@ -1,57 +1,184 @@
 #!/usr/bin/env python3
 import argparse
 
+import pandas as pd
+import numpy as np
+import pathlib
+
 from daqconf.utils import find_oksincludes
 import conffwk
 
 from rich import print
 
-def create_det_connections(args : argparse.Namespace):
+#! TODOs
+#* Try to make segments without closing the det-connections file (can you have both open?) then commit together
+# Expand create_segment for a generic number of TDE Crate applications (still just one readout app)
+# use the mapping or view files? (can just pass these from path in tdemodules directly)
+# Expand TP source IDs to support multiple detector elements (will this need to be an option, or can this be inferred from the mapping or view files?)
+#* make sessions file
+
+#* MAC addresses:
+##* 10g AMC network; are these needed in the config? (probably)
+##* 1g AMC network; are these needed in the config?
+##* How to get MAC addresses (cant ping AMCs directly and use arp)
+
+#* add instructions on what to complete by hand e.g. NIC devices, user needs to add the IPs/PCIes and MACs thenselves
+
+def get_mapping(det_name : str, base_sid : int) -> pd.DataFrame:
+    fp = pathlib.Path(__file__).parents[1].resolve()
+    df = pd.read_csv(f"{fp}/config/mapping.txt", delim_whitespace = True, names = ["Crate", "AMC", "AMC_channel", "CRP", "view_type", "view_channel"])
+    if det_name == "tde-testcrate":
+        df = df[df["Crate"] == 0]
+        df = df[np.any([df["AMC"] == i for i in [1, 6, 7]], 0)]
+        # there may be less channels in the testcrate, but for now this is fine.
+
+    df["CRP"] += base_sid # This is needed to assign the source ID correctly for the TDE ()
+    return df
+
+
+def get_includes() -> list[str]:
     include_files = [
         "schema/confmodel/dunedaq.schema.xml",
         "schema/appmodel/application.schema.xml",
         "schema/appmodel/fdmodules.schema.xml",
         "schema/appmodel/tde.schema.xml",
-
     ]
-
     res, extra_includes = find_oksincludes(["hw/hosts.data.xml", "defaults/ccm.data.xml", "defaults/connections.data.xml", "defaults/data-store-params.data.xml", "defaults/fsm.data.xml", "defaults/moduleconfs.data.xml", "defaults/wiecconfs.data.xml"], ["/nfs/home/sbhuller/fddaq-v5.3.2-rc2-a9/runarea/ehn1-daqconfigs/"])
     if res:
         include_files += extra_includes
     print(include_files)
+    return include_files
 
-    dpdk_host = args.dpdk_host.replace("-", "")
 
-    # key is crate number, so 10.73.(n+32).128, value is the number of AMCs each crate has installed.
-    crate_map = {
-        0 : range(10),
-        1 : range(10),
-        2 : range(10),
-        3 : range(10),
-        4 : range(10),
-        5 : range(10),
-        6 : range(10),
-        7 : range(8),
-        8 : range(8),
-        9 : range(10)
-    } #? use the mapping.txt files instead?
-
-    crate_map = {0 : [1, 6, 7]} # tde test crate
-
-    oksfile = "tde-det-connections"
-
-    dal = conffwk.dal.module("generated", include_files)
+def create_db(oksfile : str, include_files : list[str]) -> conffwk.Configuration:
     db = conffwk.Configuration("oksconflibs")
     if not oksfile.endswith(".data.xml"):
         oksfile = oksfile + ".data.xml"
     print(f"Creating OKS database file {oksfile}")
     db.create_db(oksfile, include_files)
     db.set_active(oksfile)
+    return db
 
-    # for 10g data senders, the ip is 10.73.(n+32).(m+13), m is the slot number of the AMC (0-9)
-    # for 1g data control, the ip is 10.73.(n+32).(m+1)
+
+def create_segment(args : argparse.Namespace):
+    dpdk_host = args.dpdk_host.replace("-", "")
+
+    mapping = get_mapping(args.det_name, args.sid)
+    crp_nums = pd.unique(mapping["CRP"])
+
+    include_files = get_includes()
+    include_files.append("tde-det-connections.data.xml")
+    db = create_db(args.det_name, include_files)
+
+    # Services
+    rest = db.create_obj("Service", "dynamic_rest_control")
+    grpc = db.create_obj("Service", "dynamic_grpc_control")
+    db.create_obj("Service", f"{args.det_name}_timesync") #? timesync not assigned anywhere, is this needed?
+
+    # TPSourceConf
+    #! make in threes (3 for the testcrate and 6 for the tde)
+    tp_sids = []
+    for c in crp_nums:
+        print(c)
+        for i in range(3):
+            sid = (c * 10) + i
+            conf = db.create_obj("SourceIDConf", f"tp-srcid-{sid}")
+            conf["sid"] = sid
+            conf["subsystem"] = "Trigger"
+            tp_sids.append(conf)
+    print(tp_sids)
+
+    # RoHwConfig
+    rohw = db.create_obj("RoHwConfig", f"{dpdk_host}-numa{args.numa}-hw-cfg")
+
+    # AVXThresholdProcessor
+    avx = db.create_obj("AVXThresholdProcessor", f"tpg-threshold-proc-{args.det_name}")
+
+    # RawDataProcessor
+    proc = db.create_obj("RawDataProcessor", f"def-tde-processor-{args.det_name}")
+    proc["queue_sizes"] = 50000
+    proc["thread_names_prefix"] = "rawproc-"
+    proc["latency_monitoring"] = 1
+    proc["channel_map"] = args.channel_map
+    proc["processing_steps"] = [
+        db.get_obj("AVXFrugalPedestalSubtractProcessor", "tpg-pedsub-proc"),
+        avx
+    ]
+    proc["sot_minima"] = db.get_obj("SamplesOverThresholdMinima", "def-sot-minima")
+
+    # DataHandlerConf
+    reqhandler = db.get_obj(class_nametde="RequestHandler", uid="def-data-request-handler")
+    latencybuffer = db.get_obj(class_name="LatencyBuffer", uid=f"tpc-latency-buf-numa{args.numa}")
+
+    data_handler = db.create_obj("DataHandlerConf", f"def-tpc-link-handler-{args.det_name}")
+    data_handler["template_for"] = "FDDataHandlerModule"
+    data_handler["input_data_type"] = "TDEEthFrame"
+    data_handler["generate_timesync"] = True
+    data_handler["request_handler"] = reqhandler
+    data_handler["latency_buffer"] = latencybuffer
+    data_handler["data_processor"] = proc
+
+
+    # ReadoutApplication
+    opmon_conf = db.get_obj("OpMonConf", "slow-all-monitoring")
+    ru_app = db.create_obj("ReadoutApplication", f"ru{dpdk_host}eth")
+    ru_app["application_name"] = "daq_application"
+    ru_app["tp_generation_enabled"] = True
+    ru_app["ta_generation_enabled"] = False
+    ru_app["contains"] = [db.get_obj("DetectorToDaqConnection", f"{args.det_name}-connections")]
+    ru_app["runs_on"] = db.get_obj("VirtualHost", "vh-np02-srv-002")
+    ru_app["exposes_service"] = [rest]
+    ru_app["opmon_conf"] = opmon_conf
+
+    queue_rules = ["fd-dlh-data-requests-queue-rule", "fa-queue-rule", "tp-queue-rule", "tde-callback-raw-data-rule"]
+    ru_app["queue_rules"] = [db.get_obj("QueueConnectionRule", i) for i in queue_rules]
+
+    net_rules = ["ta-net-rule", "tpset-net-rule", "ts-net-rule", "data-req-readout-net-rule"]
+    ru_app["network_rules"] = [db.get_obj("NetworkConnectionRule", i) for i in net_rules]
+
+    ru_app["action_plans"] = [db.get_obj("ActionPlan", i) for i in ["readout-start", "readout-stop"]]
+
+    ru_app["tp_source_ids"] = tp_sids
+    ru_app["uses"] = rohw
+    ru_app["link_handler"] = data_handler
+    ru_app["tp_handler"] = db.get_obj("DataHandlerConf", "def-tpc-tp-handler-numa0")
+    ru_app["data_reader"] = db.get_obj("DPDKReaderConf", "def-nic-receiver-conf")
+
+    # RCApplication
+    rc_app = db.create_obj("RCApplication", "tde-testcrate-controller")
+    rc_app["application_name"] = "drunc-controller"
+    rc_app["runs_on"] = db.get_obj("VirtualHost", "vh-np04-srv-024")
+    rc_app["exposes_service"] = [grpc]
+    rc_app["opmon_conf"] = opmon_conf
+    rc_app["fsm"] = db.get_obj("FSMconfiguration", "FSMconfiguration_noAction")
+    rc_app["broadcaster"] = db.get_obj("RCBroadcaster", "broadcaster-root")
+
+    # Segment
+    segment = db.create_obj("Segment", f"{args.det_name}-segment")
+    segment["applications"] = [ru_app, db.get_obj("TDECrateApplication", f"{args.det_name}-crate-application")]
+    segment["controller"] = rc_app
+
+    db.commit()
+    return
+
+def create_det_connections(args : argparse.Namespace):
+    dpdk_host = args.dpdk_host.replace("-", "")
+
+    # key is crate number, so 10.73.(n+32).128, value is the number of AMCs each crate has installed.
+    mapping = get_mapping(args.det_name, args.sid)
+    print(mapping)
+
+    structured_maps = {}
+    for crp in pd.unique(mapping["CRP"]):
+        amc_map = {}
+        crp_map = mapping[mapping["CRP"] == crp]
+        for crate in pd.unique(crp_map["Crate"]):
+            amc_map[crate] = pd.unique(crp_map[crp_map["Crate"] == crate]["AMC"])
+        structured_maps[crp] = amc_map
+
+    db = create_db("tde-det-connections", get_includes())
+
     d2d = db.create_obj("DetectorToDaqConnection", f"{args.det_name}-connections")
-
 
     # create the DPDKRecievers, DPDKPortConfigs, Processing Resource
     nw_device = db.create_obj("NetworkDevice", f"nic-{dpdk_host}-numa{args.numa}")
@@ -66,40 +193,43 @@ def create_det_connections(args : argparse.Namespace):
 
     # create the AMC related objects
     con = []
-    base_sid = args.sid
-    for n, amcs in crate_map.items():
-        resource = db.create_obj("ResourceSetAND", f"{args.det_name}-senders-crate{n}")
-        ddss = []
-        for m in amcs:
-            base_sid += 1
-            geo = db.create_obj(class_name = "GeoId", uid = f"geoId-{args.det_name}-amc-{base_sid}")
-            geo["detector_id"] = n # what is this for tde? just the crate number?
-            geo["slot_id"] = m
+    resources = {c : db.create_obj("ResourceSetAND", f"{args.det_name}-senders-crate{c}") for c in pd.unique(mapping["Crate"])}
 
-            ds = db.create_obj(class_name = "DetectorStream", uid = f"DetStream-{base_sid}")
-            ds["source_id"] = base_sid
-            ds["geo_id"] = geo
+    for s, amc_map in structured_maps.items():
+        base_sid = 100 * s
+        for n, amcs in amc_map.items():
+            resource = resources[n]
+            ddss = []
+            for m in amcs:
+                base_sid += 1
+                geo = db.create_obj(class_name = "GeoId", uid = f"geoId-{args.det_name}-amc-{base_sid}")
+                geo["detector_id"] = n # what is this for tde? just the crate number?
+                geo["slot_id"] = m
 
-            nw_send = db.create_obj(class_name = "NetworkInterface", uid = f"nw-{args.det_name}-amc-{base_sid}-10g")
-            #nw_send["mac_address"] need to do this at some point
-            nw_send["ip_address"] = [f"10.73.{n + 32}.{m + 13}"]
-            nw_send["network_name"] = "Data"
-            
-            nw_rec = db.create_obj(class_name = "NetworkInterface", uid = f"nw-{args.det_name}-amc-{base_sid}-1g")
-            #nw_send["mac_address"] need to do this at some point
-            nw_rec["ip_address"] = [f"10.73.{n + 32}.{m + 1}"]
-            nw_rec["network_name"] = "Control"
+                ds = db.create_obj(class_name = "DetectorStream", uid = f"DetStream-{base_sid}")
+                ds["source_id"] = base_sid
+                ds["geo_id"] = geo
 
-            dds = db.create_obj(class_name = "TdeAmcDetDataSender", uid = f"dds-{args.det_name}-amc-{base_sid}")
-            dds["port"] = 54321 + m + 1
-            dds["control_host"] = f"np02-amc-{base_sid}" # This should be the source ID
-            dds["contains"] = [ds] # This should be the DetStream object
-            dds["uses"] = nw_send
-            dds["control_endpoint"] = nw_rec
-            ddss.append(dds)
+                nw_send = db.create_obj(class_name = "NetworkInterface", uid = f"nw-{args.det_name}-amc-{base_sid}-10g")
+                #nw_send["mac_address"] need to do this at some point
+                nw_send["ip_address"] = [f"10.73.{n + 32}.{m + 13}"]
+                nw_send["network_name"] = "Data"
+                
+                nw_rec = db.create_obj(class_name = "NetworkInterface", uid = f"nw-{args.det_name}-amc-{base_sid}-1g")
+                #nw_send["mac_address"] need to do this at some point
+                nw_rec["ip_address"] = [f"10.73.{n + 32}.{m + 1}"]
+                nw_rec["network_name"] = "Control"
 
-        resource["contains"] = ddss
-        con.append(resource)
+                dds = db.create_obj(class_name = "TdeAmcDetDataSender", uid = f"dds-{args.det_name}-amc-{base_sid}")
+                dds["port"] = 54321 + m + 1
+                dds["control_host"] = f"np02-amc-{base_sid}" # This should be the source ID
+                dds["contains"] = [ds] # This should be the DetStream object
+                dds["uses"] = nw_send
+                dds["control_endpoint"] = nw_rec
+                ddss.append(dds)
+
+            resource["contains"] = ddss
+            con.append(resource)
 
     d2d["contains"] = con
 
@@ -121,9 +251,22 @@ if __name__ == "__main__":
     parser.add_argument("-f", "--frontend", dest = "det_name", type = str, choices = ["tde", "tde-testcrate"], default = "tde-testcrate", help = "frontend components to readout.")
     parser.add_argument("-d", "--dpdk-host", dest = "dpdk_host", type = str, default = "np02-srv-002", help = "readout application host")
     parser.add_argument("-n", "--numa", dest = "numa", type = int, default = 0, help = "NUMA region for NIC")
-    parser.add_argument("-s", "--source-id", dest = "sid", type = int, default = 900, help = "base source ID number.")
+    parser.add_argument("-s", "--source-id", dest = "sid", type = int, default = 8, help = "base source ID number.")
+
+    available_cmaps = [
+        "FiftyLTPCChannelMap",
+        "ICEBERGChannelMap",
+        "HDColdboxTPCChannelMap",
+        "PD2HDTPCChannelMap",
+        "VDColdboxTPCChannelMap",
+        "PD2VDBottomTPCChannelMap",
+        "PD2VDTPCChannelMap",
+        "DummyTPCChannelMap",
+    ]
+    parser.add_argument("-c", "--channel-map", dest = "channel_map", type = str, choices = available_cmaps, default = "PD2VDTPCChannelMap")
 
     args = parser.parse_args()
     print(args)
 
     create_det_connections(args)
+    create_segment(args)
