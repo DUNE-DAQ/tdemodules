@@ -8,18 +8,15 @@ import pathlib
 from daqconf.utils import find_oksincludes
 import conffwk
 
+import get_mac
+
 from rich import print
 
-#! TODOs
 #* Try to make segments without closing the det-connections file (can you have both open?) then commit together
-# Expand create_segment for a generic number of TDE Crate applications (still just one readout app)
-# use the mapping or view files? (can just pass these from path in tdemodules directly)
-# Expand TP source IDs to support multiple detector elements (will this need to be an option, or can this be inferred from the mapping or view files?)
-#* make sessions file
 
 #* MAC addresses:
-##* 10g AMC network; are these needed in the config? (probably)
-##* 1g AMC network; are these needed in the config?
+##* 10g AMC network; are these needed in the config
+##* 1g AMC network; are these needed in the config? (doesn't look like it?)
 ##* How to get MAC addresses (cant ping AMCs directly and use arp)
 
 #* add instructions on what to complete by hand e.g. NIC devices, user needs to add the IPs/PCIes and MACs thenselves
@@ -60,6 +57,96 @@ def create_db(oksfile : str, include_files : list[str]) -> conffwk.Configuration
     return db
 
 
+def create_det_connections(args : argparse.Namespace):
+    dpdk_host = args.dpdk_host.replace("-", "")
+
+    # key is crate number, so 10.73.(n+32).128, value is the number of AMCs each crate has installed.
+    mapping = get_mapping(args.det_name, args.sid)
+    print(mapping)
+
+    structured_maps = {}
+    for crp in pd.unique(mapping["CRP"]):
+        amc_map = {}
+        crp_map = mapping[mapping["CRP"] == crp]
+        for crate in pd.unique(crp_map["Crate"]):
+            amc_map[crate] = pd.unique(crp_map[crp_map["Crate"] == crate]["AMC"])
+        structured_maps[crp] = amc_map
+
+    db = create_db("tde-det-connections", get_includes())
+
+    d2d = db.create_obj("DetectorToDaqConnection", f"{args.det_name}-connections")
+
+    # create the DPDKRecievers, DPDKPortConfigs, Processing Resource
+    nw_device = db.create_obj("NetworkDevice", f"nic-{dpdk_host}-numa{args.numa}")
+    lcores = db.create_obj("ProcessingResource", f"lcores-{dpdk_host}-numa{args.numa}")
+
+    dpdk_port_conf = db.create_obj("DPDKPortConfiguration", f"dpdk-{dpdk_host}-numa{args.numa}-conf")
+    dpdk_port_conf["used_lcores"] = [lcores]
+
+    dpdk_receiver = db.create_obj("DPDKReceiver", f"dpdk-{dpdk_host}-receiver")
+    dpdk_receiver["uses"] = nw_device
+    dpdk_receiver["configuration"] = dpdk_port_conf
+
+    # create the AMC related objects
+    con = []
+    resources = {c : db.create_obj("ResourceSetAND", f"{args.det_name}-senders-crate{c}") for c in pd.unique(mapping["Crate"])}
+    control_host = "np04-srv-011"
+
+    for s, amc_map in structured_maps.items():
+        base_sid = 100 * s
+        for n, amcs in amc_map.items():
+            resource = resources[n]
+            ddss = []
+            for m in amcs:
+                base_sid += 1
+                geo = db.create_obj(class_name = "GeoId", uid = f"geoId-{args.det_name}-amc-{base_sid}")
+                geo["detector_id"] = n # what is this for tde? just the crate number?
+                geo["slot_id"] = m
+
+                ds = db.create_obj(class_name = "DetectorStream", uid = f"DetStream-{base_sid}")
+                ds["source_id"] = base_sid
+                ds["geo_id"] = geo
+
+                nw_send = db.create_obj(class_name = "NetworkInterface", uid = f"nw-{args.det_name}-amc-{base_sid}-10g")
+                # nw_send["mac_address"] need to do this at some point
+                nw_send["ip_address"] = [f"10.73.{n + 32}.{m + 13}"]
+                nw_send["network_name"] = "Data"
+                
+                nw_rec = db.create_obj(class_name = "NetworkInterface", uid = f"nw-{args.det_name}-amc-{base_sid}-1g")
+                ip = f"10.73.{n + 32}.{m + 1}"
+                nw_rec["ip_address"] = [ip]
+                nw_rec["mac_address"] = get_mac.get_mac(control_host, ip)
+                nw_rec["network_name"] = "Control"
+
+                dds = db.create_obj(class_name = "TdeAmcDetDataSender", uid = f"dds-{args.det_name}-amc-{base_sid}")
+                dds["port"] = 54321 + m + 1
+                dds["control_host"] = f"np02-amc-{base_sid}" # This should be the source ID
+                dds["contains"] = [ds] # This should be the DetStream object
+                dds["uses"] = nw_send
+                dds["control_endpoint"] = nw_rec
+                ddss.append(dds)
+
+            resource["contains"] = ddss
+            con.append(resource)
+
+    d2d["contains"] = con + [dpdk_receiver]
+
+    # make the TDECrateApp
+    app = db.create_obj(class_name = "TDECrateApplication", uid = f"{args.det_name}-crate-application")
+    app["application_name"] = "daq_application"
+    app["runs_on"] = db.get_obj(class_name = "VirtualHost", uid = f"vh-{control_host}") # will the virtual host for control change?
+    app["exposes_service"] = [db.get_obj(class_name = "Service", uid = "daqapp_control")]
+    app["opmon_conf"] = db.get_obj(class_name = "OpMonConf", uid = "slow-all-monitoring")
+
+    app["contains"] = [d2d]
+
+    # TDEAMCModuleConf (completely a dummy object, as AMCs cannot be configured at the moment) 
+    db.create_obj("TDEAMCModuleConf", "amc_module_conf")
+
+    db.commit()
+    return
+
+
 def create_segment(args : argparse.Namespace):
     dpdk_host = args.dpdk_host.replace("-", "")
 
@@ -72,21 +159,23 @@ def create_segment(args : argparse.Namespace):
 
     # Services
     rest = db.create_obj("Service", "dynamic_rest_control")
+    rest["protocol"] = "rest"
+    rest["port"] = 0
     grpc = db.create_obj("Service", "dynamic_grpc_control")
+    grpc["protocol"] = "grpc"
+    grpc["port"] = 0
     db.create_obj("Service", f"{args.det_name}_timesync") #? timesync not assigned anywhere, is this needed?
 
     # TPSourceConf
     #! make in threes (3 for the testcrate and 6 for the tde)
     tp_sids = []
     for c in crp_nums:
-        print(c)
         for i in range(3):
             sid = (c * 10) + i
             conf = db.create_obj("SourceIDConf", f"tp-srcid-{sid}")
             conf["sid"] = sid
             conf["subsystem"] = "Trigger"
             tp_sids.append(conf)
-    print(tp_sids)
 
     # RoHwConfig
     rohw = db.create_obj("RoHwConfig", f"{dpdk_host}-numa{args.numa}-hw-cfg")
@@ -107,7 +196,7 @@ def create_segment(args : argparse.Namespace):
     proc["sot_minima"] = db.get_obj("SamplesOverThresholdMinima", "def-sot-minima")
 
     # DataHandlerConf
-    reqhandler = db.get_obj(class_nametde="RequestHandler", uid="def-data-request-handler")
+    reqhandler = db.get_obj(class_name="RequestHandler", uid="def-data-request-handler")
     latencybuffer = db.get_obj(class_name="LatencyBuffer", uid=f"tpc-latency-buf-numa{args.numa}")
 
     data_handler = db.create_obj("DataHandlerConf", f"def-tpc-link-handler-{args.det_name}")
@@ -154,96 +243,79 @@ def create_segment(args : argparse.Namespace):
     rc_app["broadcaster"] = db.get_obj("RCBroadcaster", "broadcaster-root")
 
     # Segment
-    segment = db.create_obj("Segment", f"{args.det_name}-segment")
+    segment = db.create_obj("Segment", f"{args.det_name}-segment")    
     segment["applications"] = [ru_app, db.get_obj("TDECrateApplication", f"{args.det_name}-crate-application")]
     segment["controller"] = rc_app
 
     db.commit()
     return
 
-def create_det_connections(args : argparse.Namespace):
-    dpdk_host = args.dpdk_host.replace("-", "")
 
-    # key is crate number, so 10.73.(n+32).128, value is the number of AMCs each crate has installed.
-    mapping = get_mapping(args.det_name, args.sid)
-    print(mapping)
+def create_session(args):
+    include_files = get_includes()
 
-    structured_maps = {}
-    for crp in pd.unique(mapping["CRP"]):
-        amc_map = {}
-        crp_map = mapping[mapping["CRP"] == crp]
-        for crate in pd.unique(crp_map["Crate"]):
-            amc_map[crate] = pd.unique(crp_map[crp_map["Crate"] == crate]["AMC"])
-        structured_maps[crp] = amc_map
+    res, extra_includes = find_oksincludes(["segments/dataflow.data.xml", "segments/trigger.data.xml", "segments/hsi.data.xml"], ["/nfs/home/sbhuller/fddaq-v5.3.2-rc2-a9/runarea/ehn1-daqconfigs/"])
 
-    db = create_db("tde-det-connections", get_includes())
+    if res:
+        include_files += extra_includes
 
-    d2d = db.create_obj("DetectorToDaqConnection", f"{args.det_name}-connections")
+    include_files += ["tde-det-connections.data.xml", f"{args.det_name}.data.xml"]
+    db = create_db(f"{args.det_name}-session", include_files)
 
-    # create the DPDKRecievers, DPDKPortConfigs, Processing Resource
-    nw_device = db.create_obj("NetworkDevice", f"nic-{dpdk_host}-numa{args.numa}")
-    lcores = db.create_obj("ProcessingResource", f"lcores-{dpdk_host}-numa{args.numa}")
+    # DetectorConfig
+    det_conf = db.create_obj("DetectorConfig", "np02-detector")
+    det_conf["tpg_channel_map"] = args.channel_map
+    det_conf["clock_speed_hz"] = 62500000
+    det_conf["op_env"] = "np02vd"
+    det_conf["offline_data_stream"] = "cosmics"
 
-    dpdk_port_conf = db.create_obj("DPDKPortConfiguration", f"dpdk-{dpdk_host}-numa{args.numa}-conf")
-    dpdk_port_conf["used_lcores"] = [lcores]
+    # Segment
+    segment = db.create_obj("Segment", "root-segment")
+    segment["segments"] = [
+        db.get_obj("Segment", f"{args.det_name}-segment"),
+        db.get_obj("Segment", "df-segment"),
+        db.get_obj("Segment", "trg-segment"),
+    ]
+    segment["controller"] = db.get_obj("RCApplication", "root-controller")
 
-    dpdk_receiver = db.create_obj("DPDKReceiver", f"dpdk-{dpdk_host}-receiver")
-    dpdk_receiver["uses"] = nw_device
-    dpdk_receiver["configuration"] = dpdk_port_conf
 
-    # create the AMC related objects
-    con = []
-    resources = {c : db.create_obj("ResourceSetAND", f"{args.det_name}-senders-crate{c}") for c in pd.unique(mapping["Crate"])}
+    # Session
+    session = db.create_obj("Session", "tde-testcrate-session")
+    session["data_request_timeout_ms"] = 1000
+    session["data_rate_slowdown_factor"] = 1
+    session["controller_log_level"] = "INFO"
+    session["log_path"] = "/log"
+    session["connectivity_service"] = db.get_obj("ConnectivityService", "ehn1-connectivity-service-config")
+    session["environment"] = [db.get_obj("VariableSet", "ehn1-variables")]
+    session["disabled"]  = [
+        # how to do this...
+        db.get_obj("DFApplication", "df-s01-d2"),
+        db.get_obj("DFApplication", "df-s01-d3"),
+        db.get_obj("DFApplication", "df-s02-d0"),
+        db.get_obj("DFApplication", "df-s02-d1"),
+        db.get_obj("DFApplication", "df-s02-d2"),
+        db.get_obj("DFApplication", "df-s02-d3"),
+        db.get_obj("DFApplication", "df-s03-d0"),
+        db.get_obj("DFApplication", "df-s03-d1"),
+        db.get_obj("DFApplication", "df-s03-d2"),
+        db.get_obj("DFApplication", "df-s03-d3"),
+        db.get_obj("DFApplication", "df-s04-d1"),
+        db.get_obj("DFApplication", "df-s04-d2"),
+        db.get_obj("DFApplication", "df-s04-d3"),
+        db.get_obj("DFApplication", "df-s05-d0"),
+        db.get_obj("DFApplication", "df-s05-d1"),
+        db.get_obj("DFApplication", "df-s05-d2"),
+        db.get_obj("DFApplication", "df-s05-d3"),
+        db.get_obj("DFApplication", "df-s05-d4"),
+        db.get_obj("DFApplication", "df-s05-d5"),
+        db.get_obj("DFApplication", "df-s04-d0")
+    ]
+    session["segment"] = segment
+    session["detector_configuration"] = det_conf
+    session["opmon_uri"] = db.get_obj("OpMonURI", "cern-opmon-uri")
 
-    for s, amc_map in structured_maps.items():
-        base_sid = 100 * s
-        for n, amcs in amc_map.items():
-            resource = resources[n]
-            ddss = []
-            for m in amcs:
-                base_sid += 1
-                geo = db.create_obj(class_name = "GeoId", uid = f"geoId-{args.det_name}-amc-{base_sid}")
-                geo["detector_id"] = n # what is this for tde? just the crate number?
-                geo["slot_id"] = m
-
-                ds = db.create_obj(class_name = "DetectorStream", uid = f"DetStream-{base_sid}")
-                ds["source_id"] = base_sid
-                ds["geo_id"] = geo
-
-                nw_send = db.create_obj(class_name = "NetworkInterface", uid = f"nw-{args.det_name}-amc-{base_sid}-10g")
-                #nw_send["mac_address"] need to do this at some point
-                nw_send["ip_address"] = [f"10.73.{n + 32}.{m + 13}"]
-                nw_send["network_name"] = "Data"
-                
-                nw_rec = db.create_obj(class_name = "NetworkInterface", uid = f"nw-{args.det_name}-amc-{base_sid}-1g")
-                #nw_send["mac_address"] need to do this at some point
-                nw_rec["ip_address"] = [f"10.73.{n + 32}.{m + 1}"]
-                nw_rec["network_name"] = "Control"
-
-                dds = db.create_obj(class_name = "TdeAmcDetDataSender", uid = f"dds-{args.det_name}-amc-{base_sid}")
-                dds["port"] = 54321 + m + 1
-                dds["control_host"] = f"np02-amc-{base_sid}" # This should be the source ID
-                dds["contains"] = [ds] # This should be the DetStream object
-                dds["uses"] = nw_send
-                dds["control_endpoint"] = nw_rec
-                ddss.append(dds)
-
-            resource["contains"] = ddss
-            con.append(resource)
-
-    d2d["contains"] = con
-
-    # make the TDECrateApp
-    app = db.create_obj(class_name = "TDECrateApplication", uid = f"{args.det_name}-crate-application")
-    app["application_name"] = "daq_application"
-    app["runs_on"] = db.get_obj(class_name = "VirtualHost", uid = "vh-np04-srv-011") # will the virtual host for control change?
-    app["exposes_service"] = [db.get_obj(class_name = "Service", uid = "daqapp_control")]
-    app["opmon_conf"] = db.get_obj(class_name = "OpMonConf", uid = "slow-all-monitoring")
-
-    app["contains"] = [d2d]
     db.commit()
     return
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("Generate configuration objects for TDE readout.")
@@ -270,3 +342,4 @@ if __name__ == "__main__":
 
     create_det_connections(args)
     create_segment(args)
+    create_session(args)
