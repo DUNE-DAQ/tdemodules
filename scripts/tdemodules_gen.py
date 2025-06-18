@@ -100,7 +100,7 @@ def create_det_connections(args : argparse.Namespace):
             for m in amcs:
                 base_sid += 1
                 geo = db.create_obj(class_name = "GeoId", uid = f"geoId-{args.det_name}-amc-{base_sid}")
-                geo["detector_id"] = n # what is this for tde? just the crate number?
+                geo["detector_id"] = 11 # channel map may be required for this ()
                 geo["slot_id"] = m
 
                 ds = db.create_obj(class_name = "DetectorStream", uid = f"DetStream-{base_sid}")
@@ -131,6 +131,9 @@ def create_det_connections(args : argparse.Namespace):
 
     d2d["contains"] = con + [dpdk_receiver]
 
+    # TDEAMCModuleConf (completely a dummy object, as AMCs cannot be configured at the moment) 
+    mod_conf = db.create_obj("TDEAMCModuleConf", "amc_module_conf")
+
     # make the TDECrateApp
     app = db.create_obj(class_name = "TDECrateApplication", uid = f"{args.det_name}-crate-application")
     app["application_name"] = "daq_application"
@@ -139,9 +142,7 @@ def create_det_connections(args : argparse.Namespace):
     app["opmon_conf"] = db.get_obj(class_name = "OpMonConf", uid = "slow-all-monitoring")
 
     app["contains"] = [d2d]
-
-    # TDEAMCModuleConf (completely a dummy object, as AMCs cannot be configured at the moment) 
-    db.create_obj("TDEAMCModuleConf", "amc_module_conf")
+    app["tde_amc_module_conf"] = mod_conf
 
     db.commit()
     return
@@ -210,7 +211,7 @@ def create_segment(args : argparse.Namespace):
 
     # ReadoutApplication
     opmon_conf = db.get_obj("OpMonConf", "slow-all-monitoring")
-    ru_app = db.create_obj("ReadoutApplication", f"ru{dpdk_host}eth")
+    ru_app = db.create_obj("NP02ReadoutApplication", f"ru{dpdk_host}eth")
     ru_app["application_name"] = "daq_application"
     ru_app["tp_generation_enabled"] = True
     ru_app["ta_generation_enabled"] = False
