@@ -15,12 +15,12 @@ def get_mac(host : str, ip : str) -> str | None:
     cmd = f"ssh {os.environ['USER']}@{host} arping -f {ip} -w 1"
     out = subprocess.run(cmd, stdout = subprocess.PIPE, shell = True)
 
-    mac = None
+    mac = "00:00:00:00:00:00"
     for l in out.stdout.decode().splitlines():
         if "Unicast" in l:
             mac = l.split("[")[-1].split("]")[0].lower()
             break
-    if mac is None:
+    if mac == "00:00:00:00:00:00":
         print(f"Warning: mac address for ip {ip} from host {host} was not found")
     return mac
 

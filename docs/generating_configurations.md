@@ -21,10 +21,22 @@ Note that the starting source ID (source ID of the first CRP) can be changed (de
 tdemodules_gen.py -s <some-integer>
 ```
 
-and the host for the dpdk receiver can also be changed (this will also be the host used for the readout application)
+The host for the dpdk receiver can also be changed (this will also be the host used for the readout application)
 
 ```[bash]
 tdemodules_gen.py -d <np0x-server-name>
+```
+
+The host for communicating with the AMCs can also be changed
+
+```[bash]
+tdemodules_gen.py -C <np0x-server-name>
+```
+
+and the det_id can be changed if needed
+
+```[bash]
+tdemodules_gen.py -D <det-id>
 ```
 
 ## What to do after

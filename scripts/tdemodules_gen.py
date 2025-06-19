@@ -77,20 +77,23 @@ def create_det_connections(args : argparse.Namespace):
     d2d = db.create_obj("DetectorToDaqConnection", f"{args.det_name}-connections")
 
     # create the DPDKRecievers, DPDKPortConfigs, Processing Resource
-    nw_device = db.create_obj("NetworkDevice", f"nic-{dpdk_host}-numa{args.numa}")
-    lcores = db.create_obj("ProcessingResource", f"lcores-{dpdk_host}-numa{args.numa}")
+    dpdk_receivers = []
 
-    dpdk_port_conf = db.create_obj("DPDKPortConfiguration", f"dpdk-{dpdk_host}-numa{args.numa}-conf")
-    dpdk_port_conf["used_lcores"] = [lcores]
+    for i in range(len(structured_maps)): # one 100G NIC for one CRP
+        nw_device = db.create_obj("NetworkDevice", f"nic-{dpdk_host}-numa{i}")
+        lcores = db.create_obj("ProcessingResource", f"lcores-{dpdk_host}-numa{i}")
 
-    dpdk_receiver = db.create_obj("DPDKReceiver", f"dpdk-{dpdk_host}-receiver")
-    dpdk_receiver["uses"] = nw_device
-    dpdk_receiver["configuration"] = dpdk_port_conf
+        dpdk_port_conf = db.create_obj("DPDKPortConfiguration", f"dpdk-{dpdk_host}-numa{i}-conf")
+        dpdk_port_conf["used_lcores"] = [lcores]
+
+        dpdk_receiver = db.create_obj("DPDKReceiver", f"dpdk-{dpdk_host}-receiver{i}")
+        dpdk_receiver["uses"] = nw_device
+        dpdk_receiver["configuration"] = dpdk_port_conf
+        dpdk_receivers.append(dpdk_receiver)
 
     # create the AMC related objects
     con = []
     resources = {c : db.create_obj("ResourceSetAND", f"{args.det_name}-senders-crate{c}") for c in pd.unique(mapping["Crate"])}
-    control_host = "np04-srv-011"
 
     for s, amc_map in structured_maps.items():
         base_sid = 100 * s
@@ -100,7 +103,7 @@ def create_det_connections(args : argparse.Namespace):
             for m in amcs:
                 base_sid += 1
                 geo = db.create_obj(class_name = "GeoId", uid = f"geoId-{args.det_name}-amc-{base_sid}")
-                geo["detector_id"] = 11 # channel map may be required for this ()
+                geo["detector_id"] = args.det_id # channel map may be required for this ()
                 geo["slot_id"] = m
 
                 ds = db.create_obj(class_name = "DetectorStream", uid = f"DetStream-{base_sid}")
@@ -115,7 +118,7 @@ def create_det_connections(args : argparse.Namespace):
                 nw_rec = db.create_obj(class_name = "NetworkInterface", uid = f"nw-{args.det_name}-amc-{base_sid}-1g")
                 ip = f"10.73.{n + 32}.{m + 1}"
                 nw_rec["ip_address"] = [ip]
-                nw_rec["mac_address"] = get_mac.get_mac(control_host, ip)
+                nw_rec["mac_address"] = get_mac.get_mac(args.control_host, ip)
                 nw_rec["network_name"] = "Control"
 
                 dds = db.create_obj(class_name = "TdeAmcDetDataSender", uid = f"dds-{args.det_name}-amc-{base_sid}")
@@ -129,7 +132,7 @@ def create_det_connections(args : argparse.Namespace):
             resource["contains"] = ddss
             con.append(resource)
 
-    d2d["contains"] = con + [dpdk_receiver]
+    d2d["contains"] = con + dpdk_receivers
 
     # TDEAMCModuleConf (completely a dummy object, as AMCs cannot be configured at the moment) 
     mod_conf = db.create_obj("TDEAMCModuleConf", "amc_module_conf")
@@ -137,7 +140,7 @@ def create_det_connections(args : argparse.Namespace):
     # make the TDECrateApp
     app = db.create_obj(class_name = "TDECrateApplication", uid = f"{args.det_name}-crate-application")
     app["application_name"] = "daq_application"
-    app["runs_on"] = db.get_obj(class_name = "VirtualHost", uid = f"vh-{control_host}") # will the virtual host for control change?
+    app["runs_on"] = db.get_obj(class_name = "VirtualHost", uid = f"vh-{args.control_host}") # will the virtual host for control change?
     app["exposes_service"] = [db.get_obj(class_name = "Service", uid = "daqapp_control")]
     app["opmon_conf"] = db.get_obj(class_name = "OpMonConf", uid = "slow-all-monitoring")
 
@@ -179,7 +182,7 @@ def create_segment(args : argparse.Namespace):
             tp_sids.append(conf)
 
     # RoHwConfig
-    rohw = db.create_obj("RoHwConfig", f"{dpdk_host}-numa{args.numa}-hw-cfg")
+    rohw = db.create_obj("RoHwConfig", f"{dpdk_host}-numa0-hw-cfg") # Only one is needed for the NP02ReadoutApplication
 
     # AVXThresholdProcessor
     avx = db.create_obj("AVXThresholdProcessor", f"tpg-threshold-proc-{args.det_name}")
@@ -198,7 +201,7 @@ def create_segment(args : argparse.Namespace):
 
     # DataHandlerConf
     reqhandler = db.get_obj(class_name="RequestHandler", uid="def-data-request-handler")
-    latencybuffer = db.get_obj(class_name="LatencyBuffer", uid=f"tpc-latency-buf-numa{args.numa}")
+    latencybuffer = db.get_obj(class_name="LatencyBuffer", uid=f"tpc-latency-buf-numa0") # we hack the LB numa assignment, so just use the default numa0 config 
 
     data_handler = db.create_obj("DataHandlerConf", f"def-tpc-link-handler-{args.det_name}")
     data_handler["template_for"] = "FDDataHandlerModule"
@@ -323,8 +326,10 @@ if __name__ == "__main__":
 
     parser.add_argument("-f", "--frontend", dest = "det_name", type = str, choices = ["tde", "tde-testcrate"], default = "tde-testcrate", help = "frontend components to readout.")
     parser.add_argument("-d", "--dpdk-host", dest = "dpdk_host", type = str, default = "np02-srv-002", help = "readout application host")
-    parser.add_argument("-n", "--numa", dest = "numa", type = int, default = 0, help = "NUMA region for NIC")
     parser.add_argument("-s", "--source-id", dest = "sid", type = int, default = 8, help = "base source ID number.")
+    parser.add_argument("-D", "--det_id", dest = "det_id", type = int, default = 11, help = "detector id.")
+    parser.add_argument("-C", "--control-host", dest = "control_host", type = str, default = "np04-srv-011", help = "Control host machine for AMCs")
+
 
     available_cmaps = [
         "FiftyLTPCChannelMap",
