@@ -40,14 +40,12 @@ tdemodules_gen.py -D <det-id>
 ```
 
 ## What to do after
-Once a configuration is generated, you will see three files made:
+Once a configuration is generated, you will see a file made:
 ```
-<detector-name>-det-connections.data.xml # move into hw/
-<detector-name>.data.xml # move into segments/
-<detector-name>-session.data.xml # move into sessions/
+<detector-name>-det-connections.data.xml
 ```
 
-Once moved in the the appropriate directories in `ehn1-daqconfigs`, update the include paths in the three respective files.
+Which is kept in `ehn1-daqconfigs/hw/`. Update the include paths in the three respective files.
 
 Next, the ip and MAC addresses for the NICs need to be provided. This is found by checking the NICs registered on the server in LanDB. The pcie address can be inferred through lspci and searching for the device name:
 
