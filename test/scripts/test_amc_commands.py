@@ -30,7 +30,7 @@ def main():
     for i in range(5):
         time.sleep(t_interval)
         print(f"-- {i*t_interval} s elapsed")
-        # c.card_status()
+        c.card_status()
 
     for s, c in zip(slot_id, controllers):
         print(f"stopping card {s}")
