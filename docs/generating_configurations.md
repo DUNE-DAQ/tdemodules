@@ -47,7 +47,17 @@ Once a configuration is generated, you will see a file made:
 
 Which is kept in `ehn1-daqconfigs/hw/`. Update the include paths in the three respective files.
 
-Next, the ip and MAC addresses for the NICs need to be provided. This is found by checking the NICs registered on the server in LanDB. The pcie address can be inferred through lspci and searching for the device name:
+A few objects need to be created:
+- DPDKPortConfiguration
+- DPDKReceiver
+- NetworkDevice
+- ProcessingResource (lcores)
+- TDEAMCModuleConf
+- TDECrateApplication"
+
+Then the DPDKReceiver needs to be added to the DetectorToDAQConnections.
+
+Next, the Network recievers need to be geenerated, whhich requires the ip and MAC addresses for the NICs. These are found by checking the NICs registered on the server in LanDB. The PCIe address can be inferred through lspci and searching for the device name:
 
 ```[bash]
 lspci -vv -m | grep -Ew "Device:|NUMANode:"'

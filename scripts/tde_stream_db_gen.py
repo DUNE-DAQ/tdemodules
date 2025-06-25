@@ -5,7 +5,6 @@ import pandas as pd
 import numpy as np
 import pathlib
 
-from daqconf.utils import find_oksincludes
 import conffwk
 
 from rich import print
@@ -18,10 +17,6 @@ def get_includes(db_path : str) -> list[str]:
         "schema/appmodel/fdmodules.schema.xml",
         "schema/appmodel/tde.schema.xml",
     ]
-    res, extra_includes = find_oksincludes(["hw/hosts.data.xml", "defaults/ccm.data.xml"], [db_path])
-    if res:
-        include_files += extra_includes
-    print(include_files)
     return include_files
 
 
@@ -112,23 +107,8 @@ def create_det_connections(args : argparse.Namespace):
             con.append(resource)
 
         d2d["contains"] = con
-
-        # TDEAMCModuleConf (completely a dummy object, as AMCs cannot be configured at the moment) 
-        mod_conf = db.create_obj("TDEAMCModuleConf", "amc_module_conf")
-
-        # make the TDECrateApp
-        app = db.create_obj(class_name = "TDECrateApplication", uid = f"crp{crp}-crate-application")
-        app["application_name"] = "daq_application"
-        app["runs_on"] = db.get_obj(class_name = "VirtualHost", uid = f"vh-{args.control_host}") # will the virtual host for control change?
-        app["exposes_service"] = [db.get_obj(class_name = "Service", uid = "daqapp_control")]
-        app["opmon_conf"] = db.get_obj(class_name = "OpMonConf", uid = "slow-all-monitoring")
-
-        app["contains"] = [d2d]
-        app["tde_amc_module_conf"] = mod_conf
-
         db.commit()
     return
-
 
 
 if __name__ == "__main__":
@@ -138,20 +118,6 @@ if __name__ == "__main__":
     parser.add_argument("-f", "--frontend", dest = "det_name", type = str, choices = ["tde", "tde-testcrate"], default = "tde-testcrate", help = "frontend components to readout.")
     parser.add_argument("-s", "--source-id", dest = "sid", type = int, default = 2, help = "base source ID number.")
     parser.add_argument("-D", "--det_id", dest = "det_id", type = int, default = 11, help = "detector id.")
-    parser.add_argument("-C", "--control-host", dest = "control_host", type = str, default = "np04-srv-011", help = "Control host machine for AMCs")
-
-
-    available_cmaps = [
-        "FiftyLTPCChannelMap",
-        "ICEBERGChannelMap",
-        "HDColdboxTPCChannelMap",
-        "PD2HDTPCChannelMap",
-        "VDColdboxTPCChannelMap",
-        "PD2VDBottomTPCChannelMap",
-        "PD2VDTPCChannelMap",
-        "DummyTPCChannelMap",
-    ]
-    parser.add_argument("-c", "--channel-map", dest = "channel_map", type = str, choices = available_cmaps, default = "PD2VDTPCChannelMap")
 
     args = parser.parse_args()
     print(args)
