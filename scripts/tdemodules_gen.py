@@ -11,14 +11,14 @@ import conffwk
 from rich import print
 
 
-def get_includes() -> list[str]:
+def get_includes(db_path : str) -> list[str]:
     include_files = [
         "schema/confmodel/dunedaq.schema.xml",
         "schema/appmodel/application.schema.xml",
         "schema/appmodel/fdmodules.schema.xml",
         "schema/appmodel/tde.schema.xml",
     ]
-    res, extra_includes = find_oksincludes(["hw/hosts.data.xml", "defaults/ccm.data.xml", "defaults/connections.data.xml", "defaults/data-store-params.data.xml", "defaults/fsm.data.xml", "defaults/moduleconfs.data.xml", "defaults/wiecconfs.data.xml"], ["/nfs/home/sbhuller/fddaq-v5.3.2-rc2-a9/runarea/ehn1-daqconfigs/"])
+    res, extra_includes = find_oksincludes(["hw/hosts.data.xml", "defaults/ccm.data.xml"], [db_path])
     if res:
         include_files += extra_includes
     print(include_files)
@@ -57,45 +57,24 @@ def calculate_amc_net_info(crate, slot):
 
 
 def create_det_connections(args : argparse.Namespace):
-    dpdk_host = args.dpdk_host.replace("-", "")
-
     # key is crate number, so 10.73.(n+32).128, value is the number of AMCs each crate has installed.
     mapping = get_mapping(args.det_name, args.sid)
-    print(mapping)
 
-    structured_maps = {}
     for crp in pd.unique(mapping["CRP"]):
         amc_map = {}
         crp_map = mapping[mapping["CRP"] == crp]
         for crate in pd.unique(crp_map["Crate"]):
             amc_map[crate] = pd.unique(crp_map[crp_map["Crate"] == crate]["AMC"])
-        structured_maps[crp] = amc_map
 
-    db = create_db("tde-det-connections", get_includes())
+        db = create_db(f"crp{crp}-det-connections", get_includes(args.db_path))
 
-    d2d = db.create_obj("DetectorToDaqConnection", f"{args.det_name}-connections")
+        d2d = db.create_obj("DetectorToDaqConnection", f"{args.det_name}-connections")
 
-    # create the DPDKRecievers, DPDKPortConfigs, Processing Resource
-    dpdk_receivers = []
+        # create the AMC related objects
+        con = []
+        resources = {c : db.create_obj("ResourceSetAND", f"{args.det_name}-senders-crp{crp}-crate{c}") for c in amc_map}
 
-    for i in range(len(structured_maps)): # one 100G NIC for one CRP
-        nw_device = db.create_obj("NetworkDevice", f"nic-{dpdk_host}-numa{i}")
-        lcores = db.create_obj("ProcessingResource", f"lcores-{dpdk_host}-numa{i}")
-
-        dpdk_port_conf = db.create_obj("DPDKPortConfiguration", f"dpdk-{dpdk_host}-numa{i}-conf")
-        dpdk_port_conf["used_lcores"] = [lcores]
-
-        dpdk_receiver = db.create_obj("DPDKReceiver", f"dpdk-{dpdk_host}-receiver{i}")
-        dpdk_receiver["uses"] = nw_device
-        dpdk_receiver["configuration"] = dpdk_port_conf
-        dpdk_receivers.append(dpdk_receiver)
-
-    # create the AMC related objects
-    con = []
-    resources = {c : db.create_obj("ResourceSetAND", f"{args.det_name}-senders-crate{c}") for c in pd.unique(mapping["Crate"])}
-
-    for s, amc_map in structured_maps.items():
-        base_sid = 100 * s
+        base_sid = 100 * crp
         for n, amcs in amc_map.items():
             resource = resources[n]
             ddss = []
@@ -132,22 +111,22 @@ def create_det_connections(args : argparse.Namespace):
             resource["contains"] = ddss
             con.append(resource)
 
-    d2d["contains"] = con + dpdk_receivers
+        d2d["contains"] = con
 
-    # TDEAMCModuleConf (completely a dummy object, as AMCs cannot be configured at the moment) 
-    mod_conf = db.create_obj("TDEAMCModuleConf", "amc_module_conf")
+        # TDEAMCModuleConf (completely a dummy object, as AMCs cannot be configured at the moment) 
+        mod_conf = db.create_obj("TDEAMCModuleConf", "amc_module_conf")
 
-    # make the TDECrateApp
-    app = db.create_obj(class_name = "TDECrateApplication", uid = f"{args.det_name}-crate-application")
-    app["application_name"] = "daq_application"
-    app["runs_on"] = db.get_obj(class_name = "VirtualHost", uid = f"vh-{args.control_host}") # will the virtual host for control change?
-    app["exposes_service"] = [db.get_obj(class_name = "Service", uid = "daqapp_control")]
-    app["opmon_conf"] = db.get_obj(class_name = "OpMonConf", uid = "slow-all-monitoring")
+        # make the TDECrateApp
+        app = db.create_obj(class_name = "TDECrateApplication", uid = f"crp{crp}-crate-application")
+        app["application_name"] = "daq_application"
+        app["runs_on"] = db.get_obj(class_name = "VirtualHost", uid = f"vh-{args.control_host}") # will the virtual host for control change?
+        app["exposes_service"] = [db.get_obj(class_name = "Service", uid = "daqapp_control")]
+        app["opmon_conf"] = db.get_obj(class_name = "OpMonConf", uid = "slow-all-monitoring")
 
-    app["contains"] = [d2d]
-    app["tde_amc_module_conf"] = mod_conf
+        app["contains"] = [d2d]
+        app["tde_amc_module_conf"] = mod_conf
 
-    db.commit()
+        db.commit()
     return
 
 
@@ -155,9 +134,9 @@ def create_det_connections(args : argparse.Namespace):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("Generate configuration objects for TDE readout.")
 
+    parser.add_argument(dest = "db_path", type = str, help = "path to oks database.")
     parser.add_argument("-f", "--frontend", dest = "det_name", type = str, choices = ["tde", "tde-testcrate"], default = "tde-testcrate", help = "frontend components to readout.")
-    parser.add_argument("-d", "--dpdk-host", dest = "dpdk_host", type = str, default = "np02-srv-002", help = "readout application host")
-    parser.add_argument("-s", "--source-id", dest = "sid", type = int, default = 8, help = "base source ID number.")
+    parser.add_argument("-s", "--source-id", dest = "sid", type = int, default = 2, help = "base source ID number.")
     parser.add_argument("-D", "--det_id", dest = "det_id", type = int, default = 11, help = "detector id.")
     parser.add_argument("-C", "--control-host", dest = "control_host", type = str, default = "np04-srv-011", help = "Control host machine for AMCs")
 
