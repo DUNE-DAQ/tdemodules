@@ -77,7 +77,7 @@ AMCController::card_status() {
   std::vector<uint8_t> reply = send_cmd(m_status_cmd);
 
   if (reply.empty()) {
-    TLOG() << "No reply from the AMC.";
+    TLOG() << "Recieved an empty reply.";
     return;
   }
 
