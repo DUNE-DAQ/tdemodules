@@ -55,59 +55,52 @@ def create_det_connections(args : argparse.Namespace):
     # key is crate number, so 10.73.(n+32).128, value is the number of AMCs each crate has installed.
     mapping = get_mapping(args.det_name, args.sid)
 
-    for crp in pd.unique(mapping["CRP"]):
-        amc_map = {}
-        crp_map = mapping[mapping["CRP"] == crp]
-        for crate in pd.unique(crp_map["Crate"]):
-            amc_map[crate] = pd.unique(crp_map[crp_map["Crate"] == crate]["AMC"])
+    db = create_db(f"{args.det_name}-det-connections", get_includes(args.db_path))
 
-        db = create_db(f"crp{crp}-det-connections", get_includes(args.db_path))
 
-        d2d = db.create_obj("DetectorToDaqConnection", f"{args.det_name}-connections")
+    sid_counters = {i : i * 100 for i in pd.unique(mapping["CRP"])}
+    for cg in [range(0, 5), range(5, 10)]:
+        streams = []
+        d2d = db.create_obj("DetectorToDaqConnection", f"{args.det_name}-connections-crate-{min(cg)}-{max(cg)}")
+        resource = db.create_obj("ResourceSetAND", f"{args.det_name}-senders-crate-{min(cg)}-{max(cg)}")
+        for crate in cg:
+            crate_map = mapping[mapping["Crate"] == crate]
+            amcs = pd.unique(crate_map["AMC"])
+            for amc in amcs:
+                name = f"crate{crate}-slot{amc}"
+                base_sid = pd.unique(crate_map[crate_map["AMC"] == amc]["CRP"])[0]
+                sid_counters[base_sid] += 1
+                sid_counters[base_sid]
 
-        # create the AMC related objects
-        con = []
-        resources = {c : db.create_obj("ResourceSetAND", f"{args.det_name}-senders-crp{crp}-crate{c}") for c in amc_map}
-
-        base_sid = 100 * crp
-        for n, amcs in amc_map.items():
-            resource = resources[n]
-            ddss = []
-            for m in amcs:
-                base_sid += 1
-                
-                amc_net_info = calculate_amc_net_info(n, m)
-                geo = db.create_obj(class_name = "GeoId", uid = f"geoId-{args.det_name}-amc-{base_sid}")
+                amc_net_info = calculate_amc_net_info(crate, amc)
+                geo = db.create_obj(class_name = "GeoId", uid = f"geoId-{args.det_name}-amc-{sid_counters[base_sid]}")
                 geo["detector_id"] = args.det_id # channel map may be required for this ()
-                geo["slot_id"] = m
+                geo["slot_id"] = amc
 
-                ds = db.create_obj(class_name = "DetectorStream", uid = f"DetStream-{base_sid}")
-                ds["source_id"] = base_sid
+                ds = db.create_obj(class_name = "DetectorStream", uid = f"DetStream-{sid_counters[base_sid]}")
+                ds["source_id"] = sid_counters[base_sid]
                 ds["geo_id"] = geo
 
-                nw_send = db.create_obj(class_name = "NetworkInterface", uid = f"nw-{args.det_name}-amc-{base_sid}-10g")
+                nw_send = db.create_obj(class_name = "NetworkInterface", uid = f"nw-{args.det_name}-amc-{name}-10g")
                 nw_send["mac_address"] = amc_net_info["mac_10g"]
                 nw_send["ip_address"] = [amc_net_info["ip_10g"]]
                 nw_send["network_name"] = "Data"
                 
-                nw_rec = db.create_obj(class_name = "NetworkInterface", uid = f"nw-{args.det_name}-amc-{base_sid}-1g")
+                nw_rec = db.create_obj(class_name = "NetworkInterface", uid = f"nw-{args.det_name}-amc-{name}-1g")
                 nw_rec["mac_address"] = amc_net_info["mac_1g"]
                 nw_rec["ip_address"] = [amc_net_info["ip_1g"]]
                 nw_rec["network_name"] = "Control"
 
-                dds = db.create_obj(class_name = "TdeAmcDetDataSender", uid = f"dds-{args.det_name}-amc-{base_sid}")
-                dds["port"] = 54321 + m + 1
-                dds["control_host"] = f"np02-amc-{base_sid}" # This should be the source ID
+                dds = db.create_obj(class_name = "TdeAmcDetDataSender", uid = f"dds-{args.det_name}-amc-{name}")
+                dds["port"] = 54321 + amc + 1
+                dds["control_host"] = f"np02-amc-{sid_counters[base_sid]}" # This should be the source ID
                 dds["contains"] = [ds] # This should be the DetStream object
                 dds["uses"] = nw_send
                 dds["control_endpoint"] = nw_rec
-                ddss.append(dds)
-
-            resource["contains"] = ddss
-            con.append(resource)
-
-        d2d["contains"] = con
-        db.commit()
+                streams.append(dds)
+        resource["contains"] = streams
+        d2d["contains"] = [resource]
+    db.commit()
     return
 
 
