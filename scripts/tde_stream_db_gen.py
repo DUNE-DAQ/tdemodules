@@ -10,7 +10,7 @@ import conffwk
 from rich import print
 
 
-def get_includes(db_path : str) -> list[str]:
+def get_includes() -> list[str]:
     include_files = [
         "schema/confmodel/dunedaq.schema.xml",
         "schema/appmodel/application.schema.xml",
@@ -55,13 +55,12 @@ def create_det_connections(args : argparse.Namespace):
     # key is crate number, so 10.73.(n+32).128, value is the number of AMCs each crate has installed.
     mapping = get_mapping(args.det_name, args.sid)
 
-    db = create_db(f"{args.det_name}-det-connections", get_includes(args.db_path))
+    db = create_db(f"crp23-det-senders", get_includes())
 
 
     sid_counters = {i : i * 100 for i in pd.unique(mapping["CRP"])}
     for cg in [range(0, 5), range(5, 10)]:
         streams = []
-        d2d = db.create_obj("DetectorToDaqConnection", f"{args.det_name}-connections-crate-{min(cg)}-{max(cg)}")
         resource = db.create_obj("ResourceSetAND", f"{args.det_name}-senders-crate-{min(cg)}-{max(cg)}")
         for crate in cg:
             crate_map = mapping[mapping["Crate"] == crate]
@@ -91,7 +90,8 @@ def create_det_connections(args : argparse.Namespace):
                 nw_rec["ip_address"] = [amc_net_info["ip_1g"]]
                 nw_rec["network_name"] = "Control"
 
-                dds = db.create_obj(class_name = "TdeAmcDetDataSender", uid = f"dds-{args.det_name}-amc-{name}")
+                sender_names = sid_counters[base_sid] if args.sid_suffix else name
+                dds = db.create_obj(class_name = "TdeAmcDetDataSender", uid = f"dds-{args.det_name}-amc-{sender_names}")
                 dds["port"] = 54321 + amc + 1
                 dds["control_host"] = f"np02-amc-{sid_counters[base_sid]}" # This should be the source ID
                 dds["contains"] = [ds] # This should be the DetStream object
@@ -99,7 +99,6 @@ def create_det_connections(args : argparse.Namespace):
                 dds["control_endpoint"] = nw_rec
                 streams.append(dds)
         resource["contains"] = streams
-        d2d["contains"] = [resource]
     db.commit()
     return
 
@@ -107,10 +106,10 @@ def create_det_connections(args : argparse.Namespace):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("Generate configuration objects for TDE readout.")
 
-    parser.add_argument(dest = "db_path", type = str, help = "path to oks database.")
     parser.add_argument("-f", "--frontend", dest = "det_name", type = str, choices = ["tde", "tde-testcrate"], default = "tde-testcrate", help = "frontend components to readout.")
     parser.add_argument("-s", "--source-id", dest = "sid", type = int, default = 2, help = "base source ID number.")
     parser.add_argument("-D", "--det_id", dest = "det_id", type = int, default = 11, help = "detector id.")
+    parser.add_argument("--sid_suffix", dest = "sid_suffix", action = "store_true", help = "use source ID as the suffix for the AMCDetDataSenders.")
 
     args = parser.parse_args()
     print(args)
