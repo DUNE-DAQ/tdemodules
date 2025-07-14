@@ -57,11 +57,10 @@ def create_det_connections(args : argparse.Namespace):
 
     db = create_db(f"crp23-det-senders", get_includes())
 
-
     sid_counters = {i : i * 100 for i in pd.unique(mapping["CRP"])}
-    for cg in [range(0, 5), range(5, 10)]:
+    for e, cg in enumerate([[0, 1, 2, 6, 7], [3, 4, 5, 8, 9]]):
         streams = []
-        resource = db.create_obj("ResourceSetAND", f"{args.det_name}-senders-crate-{min(cg)}-{max(cg)}")
+        resource = db.create_obj("ResourceSetAND", f"{args.det_name}-senders-crate-{e}")
         for crate in cg:
             crate_map = mapping[mapping["Crate"] == crate]
             amcs = pd.unique(crate_map["AMC"])
@@ -69,7 +68,6 @@ def create_det_connections(args : argparse.Namespace):
                 name = f"crate{crate}-slot{amc}"
                 base_sid = pd.unique(crate_map[crate_map["AMC"] == amc]["CRP"])[0]
                 sid_counters[base_sid] += 1
-                sid_counters[base_sid]
 
                 amc_net_info = calculate_amc_net_info(crate, amc)
                 geo = db.create_obj(class_name = "GeoId", uid = f"geoId-{args.det_name}-amc-{sid_counters[base_sid]}")
