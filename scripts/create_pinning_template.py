@@ -1,0 +1,63 @@
+#!/usr/bin/env python3
+import json
+
+import pandas as pd
+
+from rich import print
+
+from tde_stream_db_gen import get_mapping
+
+def main():
+    mapping = get_mapping("tde", 2)
+    print(mapping)
+
+    thread_name_prefix_ru = [
+        "rawproc-0",
+        "cleanup",
+        "consumer",
+        "recording",
+        "periodic"
+    ]
+    thread_name_prefix_tpg = [
+        "tpproc-0",
+        "cleanup",
+        "consumer",
+        "periodic"
+    ]
+
+    crate_group = [[0, 1, 2, 6, 7], [3, 4, 5, 8, 9]]
+
+    sids = {i : [] for i in range(len(crate_group))}
+    sid_counters = {i : i * 100 for i in pd.unique(mapping["CRP"])}
+
+    for cg in crate_group:
+        for crate in cg:
+            crate_map = mapping[mapping["Crate"] == crate]
+            amcs = pd.unique(crate_map["AMC"])
+            for amc in amcs:
+                base_sid = pd.unique(crate_map[crate_map["AMC"] == amc]["CRP"])[0]
+                sid_counters[base_sid] += 1
+
+                index = [crate in i for i in crate_group][0]
+                sids[index].append(str(sid_counters[base_sid]))
+
+    template = {}
+    for (n, v), s in zip(enumerate(sids.values()), pd.unique(mapping["CRP"])):
+        threads = {"numa" : n, "threads" : []}
+        for t in thread_name_prefix_ru:
+            threads["threads"].append(f"{t}-({'|'.join(v)})")
+
+        for t in thread_name_prefix_tpg:
+            threads["threads"].append(f"{t}-({'|'.join([str((10 * s) + j) for j in range(3)])})")
+
+        template[f"ru_app_{n}"] = threads
+
+    file = "pin_template_tde.json"
+    with open(file, "w") as f:
+        json.dump({"daq_application" : template}, f, indent = 4)
+    print(f"pinning template written to {file}")
+
+    return
+
+if __name__ == "__main__":
+    main()
