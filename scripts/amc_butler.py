@@ -16,7 +16,38 @@ import tdemodules
 def ping(host):
     return subprocess.call(['ping', "-c", '1', host]) == 0
 
-def main(args : argparse.Namespace):
+class Commands():
+    def __init__(self, controllers : dict):
+        self.controllers = controllers
+
+    def stop(self):
+        for k, v in self.controllers.items():
+            print(f"starting: {k}")
+            v.card_stop()
+        return
+
+    def start(self):
+        for k, v in self.controllers.items():
+            print(f"starting: {k}")
+            v.card_start()
+        return
+
+    def status(self):
+        # Constantly get the status of the AMCs to check whether they can be accessed.
+        if self.controllers:
+            print("press ctrl-C to exit.")
+            ti = 10
+            t = time.time()
+            while True:
+                for k, v in self.controllers.items():
+                    print(f"Reading status of AMC with IP: {k})")
+                    v.card_status()
+                time.sleep(ti)
+                print(f"-- {time.time() - t:.2g} s elapsed")
+        return
+
+
+def main(args):
     # get list of amcs from the command arguments
     controllers = {}
     if args.crate:
@@ -33,28 +64,22 @@ def main(args : argparse.Namespace):
             num = int(i.split(".")[-1])
             controllers[i] = tdemodules.AMCController(i, 54321 + num)
     else:
-        print("how did we get here?")
-        exit(2)
+        print("You must provide either '--crate' or pass ip addresses for the AMCs to control")
+        exit(1)
 
-    # Constantly get the status of the AMCs to check whether they can be accessed.
-    if controllers:
-        print("press ctrl-C to exit.")
-        ti = 10
-        t = time.time()
-        while True:
-            for k, v in controllers.items():
-                print(f"Reading status of AMC with IP: {k})")
-                v.card_status()
-            time.sleep(ti)
-            print(f"-- {time.time() - t:.2g} s elapsed")
+    cmds = Commands(controllers)
+    cmd = getattr(cmds, args.command)
+    cmd()
 
     return
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser("Check the status of an AMC or multiple AMCs to ensure they can be reached.")
+    parser = argparse.ArgumentParser()
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("-c", "--crate", type = str, help = "IP address of crate MCH.")
     group.add_argument("-a", "--amc", type = str, nargs = "+", help = "IP address/es of AMCs.")
+    parser.add_argument("--command", type = str, choices = ["start", "stop", "status"], required = True)
+
     args = parser.parse_args()
     print(args)
     main(args)
