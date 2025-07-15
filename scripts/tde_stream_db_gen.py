@@ -60,7 +60,7 @@ def create_det_connections(args : argparse.Namespace):
     sid_counters = {i : i * 100 for i in pd.unique(mapping["CRP"])}
     for e, cg in enumerate([[0, 1, 2, 6, 7], [3, 4, 5, 8, 9]]):
         streams = []
-        resource = db.create_obj("ResourceSetAND", f"{args.det_name}-senders-crate-{e}")
+        resource = db.create_obj("ResourceSetAND", f"{args.det_name}-senders-crate-{'-'.join([str(c) for c in cg])}")
         for crate in cg:
             crate_map = mapping[mapping["Crate"] == crate]
             amcs = pd.unique(crate_map["AMC"])
@@ -72,6 +72,7 @@ def create_det_connections(args : argparse.Namespace):
                 amc_net_info = calculate_amc_net_info(crate, amc)
                 geo = db.create_obj(class_name = "GeoId", uid = f"geoId-{args.det_name}-amc-{sid_counters[base_sid]}")
                 geo["detector_id"] = args.det_id # channel map may be required for this ()
+                geo["crate_id"] = crate
                 geo["slot_id"] = amc
 
                 ds = db.create_obj(class_name = "DetectorStream", uid = f"DetStream-{sid_counters[base_sid]}")
