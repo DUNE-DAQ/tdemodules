@@ -105,7 +105,7 @@ def create_det_connections(args : argparse.Namespace):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("Generate configuration objects for TDE readout.")
 
-    parser.add_argument("-f", "--frontend", dest = "det_name", type = str, choices = ["tde", "tde-testcrate"], default = "tde-testcrate", help = "frontend components to readout.")
+    parser.add_argument("-f", "--frontend", dest = "det_name", type = str, choices = ["tde", "tde-testcrate"], default = "tde", help = "frontend components to readout.")
     parser.add_argument("-s", "--source-id", dest = "sid", type = int, default = 2, help = "base source ID number.")
     parser.add_argument("-D", "--det_id", dest = "det_id", type = int, default = 11, help = "detector id.")
     parser.add_argument("--sid_suffix", dest = "sid_suffix", action = "store_true", help = "use source ID as the suffix for the AMCDetDataSenders.")
