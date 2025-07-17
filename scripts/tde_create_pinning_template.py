@@ -7,13 +7,16 @@ import pandas as pd
 
 from rich import print
 
-from tde_stream_db_gen import get_mapping_from_channel_map
+from tde_stream_db_gen import get_mapping_from_channel_map, get_mapping
 
 
 @click.command
 @click.option("-c", "--channel_map", type = str, help = "ProtoDUNE channel map to infer the Crate/AMC mapping.")
 def main(channel_map):
-    mapping = get_mapping_from_channel_map(channel_map)
+    if channel_map:
+        mapping = get_mapping_from_channel_map(channel_map)
+    else:
+        mapping = get_mapping(11, 2)
 
     thread_name_prefix_ru = [
         "rawproc-0",
