@@ -32,6 +32,16 @@ def get_mapping(det_name : str, base_sid : int) -> pd.DataFrame:
     return df
 
 
+def get_mapping_from_channel_map(channel_map : str):
+    df = pd.read_csv(channel_map, sep=r'\s+', names = ['offlchan', 'detid', 'detelement', 'crate', 'slot', 'stream', 'streamchan', 'plane', 'chan_in_plane', 'femb', 'asic ', 'asicchan'])
+
+    df23 = df[df['detelement'] < 4]
+
+    df_map = df23[['crate','slot', 'streamchan', 'detelement', 'plane', 'chan_in_plane']]
+    df_map.columns = ["Crate", "AMC", "AMC_channel", "CRP", "view_type", "view_channel"]
+    return df_map
+
+
 def create_db(oksfile : str, include_files : list[str]) -> conffwk.Configuration:
     db = conffwk.Configuration("oksconflibs")
     if not oksfile.endswith(".data.xml"):
@@ -53,7 +63,8 @@ def calculate_amc_net_info(crate, slot):
 
 def create_det_connections(args : argparse.Namespace):
     # key is crate number, so 10.73.(n+32).128, value is the number of AMCs each crate has installed.
-    mapping = get_mapping(args.det_name, args.sid)
+    mapping = get_mapping_from_channel_map(args.channel_map)
+    print(mapping)
 
     db = create_db(f"crp23-det-senders", get_includes())
 
@@ -109,6 +120,7 @@ if __name__ == "__main__":
     parser.add_argument("-s", "--source-id", dest = "sid", type = int, default = 2, help = "base source ID number.")
     parser.add_argument("-D", "--det_id", dest = "det_id", type = int, default = 11, help = "detector id.")
     parser.add_argument("--sid_suffix", dest = "sid_suffix", action = "store_true", help = "use source ID as the suffix for the AMCDetDataSenders.")
+    parser.add_argument("-c", "--channel_map", dest = "channel_map", type = str, help = "ProtoDUNE channel map to infer the Crate/AMC mapping.", required = True)
 
     args = parser.parse_args()
     print(args)

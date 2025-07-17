@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
+import click
+
 import json
 
 import pandas as pd
 
 from rich import print
 
-from tde_stream_db_gen import get_mapping
+from tde_stream_db_gen import get_mapping_from_channel_map
 
-def main():
-    mapping = get_mapping("tde", 2)
+
+@click.command
+@click.option("-c", "--channel_map", type = str, help = "ProtoDUNE channel map to infer the Crate/AMC mapping.")
+def main(channel_map):
+    mapping = get_mapping_from_channel_map(channel_map)
 
     thread_name_prefix_ru = [
         "rawproc-0",
@@ -41,7 +46,6 @@ def main():
                 sids[index].append(str(sid_counters[base_sid]))
 
     template = {"thread_group" : []}
-    thread_groups = []
     for (n, v), s in zip(enumerate(sids.values()), pd.unique(mapping["CRP"])):
         tg = {"numa" : n, "threads" : []}
         for t in thread_name_prefix_ru:
