@@ -9,7 +9,6 @@ from tde_stream_db_gen import get_mapping
 
 def main():
     mapping = get_mapping("tde", 2)
-    print(mapping)
 
     thread_name_prefix_ru = [
         "rawproc-0",

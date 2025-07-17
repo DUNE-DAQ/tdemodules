@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import os
 
 import pandas as pd
 import numpy as np
@@ -21,8 +22,7 @@ def get_includes() -> list[str]:
 
 
 def get_mapping(det_name : str, base_sid : int) -> pd.DataFrame:
-    fp = pathlib.Path(__file__).parents[1].resolve()
-    df = pd.read_csv(f"{fp}/config/mapping.txt", delim_whitespace = True, names = ["Crate", "AMC", "AMC_channel", "CRP", "view_type", "view_channel"])
+    df = pd.read_csv(f"{os.environ['DBT_AREA_ROOT']}/sourcecode/tdemodules/config/mapping.txt", delim_whitespace = True, names = ["Crate", "AMC", "AMC_channel", "CRP", "view_type", "view_channel"])
     if det_name == "tde-testcrate":
         df = df[df["Crate"] == 0]
         df = df[np.any([df["AMC"] == i for i in [1, 6, 7]], 0)]
