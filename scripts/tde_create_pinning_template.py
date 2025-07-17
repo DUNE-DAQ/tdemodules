@@ -40,20 +40,21 @@ def main():
                 index = [crate in i for i in crate_group][0]
                 sids[index].append(str(sid_counters[base_sid]))
 
-    template = {}
+    template = {"thread_group" : []}
+    thread_groups = []
     for (n, v), s in zip(enumerate(sids.values()), pd.unique(mapping["CRP"])):
-        threads = {"numa" : n, "threads" : []}
+        tg = {"numa" : n, "threads" : []}
         for t in thread_name_prefix_ru:
-            threads["threads"].append(f"{t}-({'|'.join(v)})")
+            tg["threads"].append(f"{t}-({'|'.join(v)})")
 
         for t in thread_name_prefix_tpg:
-            threads["threads"].append(f"{t}-({'|'.join([str((10 * s) + j) for j in range(3)])})")
+            tg["threads"].append(f"{t}-({'|'.join([str((10 * s) + j) for j in range(3)])})")
 
-        template[f"ru_app_{n}"] = threads
+        template["thread_group"].append(tg)
 
     file = "pin_template_tde.json"
     with open(file, "w") as f:
-        json.dump({"daq_application" : template}, f, indent = 4)
+        json.dump({"daq_application" : {"runp02srv004tde" : template}}, f, indent = 4)
     print(f"pinning template written to {file}")
 
     return
