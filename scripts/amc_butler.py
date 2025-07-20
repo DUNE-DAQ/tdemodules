@@ -2,14 +2,16 @@
 """
 Created on: 05/06/2025 11:16
 
-Author: Shyam Bhuller
+Author: Shyam Bhuller, Alessandro Thea
 
 Description: Check the status of an AMC or multiple AMCs to ensure they can be reached.
 """
 
-import argparse
 import subprocess
 import time
+import sh
+import click
+from rich import print
 
 import tdemodules
 
@@ -35,51 +37,75 @@ class Commands():
     def status(self):
         # Constantly get the status of the AMCs to check whether they can be accessed.
         if self.controllers:
-            print("press ctrl-C to exit.")
+            print("[yellow]Press ctrl-C to exit.[/yellow]")
             ti = 10
             t = time.time()
             while True:
                 for k, v in self.controllers.items():
                     print(f"Reading status of AMC with IP: {k})")
                     v.card_status()
+                print(f"[cyan]Sleeping {ti}s[/cyan]")
                 time.sleep(ti)
                 print(f"-- {time.time() - t:.2g} s elapsed")
         return
 
 
-def main(args):
-    # get list of amcs from the command arguments
-    controllers = {}
-    if args.crate:
-        if not ping(args.crate): # try pinging the crate #?also do this for the AMC option?
-            print(f"Could not ping uTCA Crate at IP: {args.crate}")
-            exit(1)
+@click.command()
+@click.argument('crate_ip', type=str)
+@click.option('-a', '--amcs', type=int, multiple=True, default=[i for i in range(10)])
+@click.option('-c', 'cmd',  type=click.Choice(['arping', 'status', 'start', 'stop']), default=None)
+def main(crate_ip, amcs, cmd):
 
-        for i in range(10):  # 10 is the maximum number of AMCs for any given crate currently for np02. Could have an actual mapping to create the correct amount of controllers 
-            ip = args.crate.rsplit(".", 1)[0] + f".{i + 1}"
-            port = 54321 + (i + 1)
-            controllers[ip] = tdemodules.AMCController(ip, port)
-    elif args.amc:
-        for i in args.amc:
-            num = int(i.split(".")[-1])
-            controllers[i] = tdemodules.AMCController(i, 54321 + num)
-    else:
-        print("You must provide either '--crate' or pass ip addresses for the AMCs to control")
+    # get list of amcs from the command arguments
+    try:
+        sh.ping(["-c", '1', crate_ip])
+        print(f"[green]uTCA crate {crate_ip} is active[/green]")
+    except sh.ErrorReturnCode as e:
+        print(f"[red]Could not ping uTCA Crate at IP: {crate_ip}[/red]")
         exit(1)
 
-    cmds = Commands(controllers)
-    cmd = getattr(cmds, args.command)
-    cmd()
+    crate_subnet = crate_ip.rsplit(".", 1)[0]
+
+    amc_ips = { i: crate_subnet + f".{i + 1}" for i in amcs}
+
+    if cmd=='arping':
+        # Arping the crate, just for completeness
+        try:
+            r = sh.arping(["-c", '1', crate_ip])
+            print(f"- [green]uTCA crate {crate_ip} responded to arping[/green]")
+            print(r)
+        except sh.ErrorReturnCode as e:
+            print(f"- [red]Could not arping uTCA Crate at IP: {crate_ip}[/red]")
+        
+        # Arping the AMCs
+        for amc, amc_ip in amc_ips.items():
+            try:
+                r = sh.arping(["-c", '1', amc_ip])
+                print(f"- [green]AMC {amc} ({amc_ip}) responded to arping[/green]")
+                print(r)
+
+            except sh.ErrorReturnCode as e:
+                print(f"- Could not arping AMC {amc} at IP: {amc_ip}")
+
+        # Arping the NIC
+        nic_ip = crate_subnet+'.129'
+        try:
+            r = sh.arping(["-c", '1', nic_ip])
+            print(f"- [green]NIC data sink {nic_ip} responded to arping[/green]")
+            print(r)
+        except sh.ErrorReturnCode as e:
+            print(f"- [red]Could not arping NIC data at IP: {nic_ip}[/red]")
+
+    else:
+        controllers = { amc_ip:tdemodules.AMCController(amc_ip, 54321 + (i + 1)) for i,amc_ip in amc_ips.items() }
+        print(controllers)
+        cmds = Commands(controllers)
+        getattr(cmds, cmd)()
+
+    return
 
     return
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("-c", "--crate", type = str, help = "IP address of crate MCH.")
-    group.add_argument("-a", "--amc", type = str, nargs = "+", help = "IP address/es of AMCs.")
-    parser.add_argument("--command", type = str, choices = ["start", "stop", "status"], required = True)
 
-    args = parser.parse_args()
-    print(args)
-    main(args)
+    main()
