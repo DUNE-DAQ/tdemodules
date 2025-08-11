@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import os
 
 import pandas as pd
 import numpy as np
@@ -10,7 +11,7 @@ import conffwk
 from rich import print
 
 
-def get_includes(db_path : str) -> list[str]:
+def get_includes() -> list[str]:
     include_files = [
         "schema/confmodel/dunedaq.schema.xml",
         "schema/appmodel/application.schema.xml",
@@ -21,8 +22,7 @@ def get_includes(db_path : str) -> list[str]:
 
 
 def get_mapping(det_name : str, base_sid : int) -> pd.DataFrame:
-    fp = pathlib.Path(__file__).parents[1].resolve()
-    df = pd.read_csv(f"{fp}/config/mapping.txt", delim_whitespace = True, names = ["Crate", "AMC", "AMC_channel", "CRP", "view_type", "view_channel"])
+    df = pd.read_csv(f"{os.environ['DBT_AREA_ROOT']}/sourcecode/tdemodules/config/mapping.txt", delim_whitespace = True, names = ["Crate", "AMC", "AMC_channel", "CRP", "view_type", "view_channel"])
     if det_name == "tde-testcrate":
         df = df[df["Crate"] == 0]
         df = df[np.any([df["AMC"] == i for i in [1, 6, 7]], 0)]
@@ -30,6 +30,16 @@ def get_mapping(det_name : str, base_sid : int) -> pd.DataFrame:
 
     df["CRP"] += base_sid # This is needed to assign the source ID correctly for the TDE ()
     return df
+
+
+def get_mapping_from_channel_map(channel_map : str):
+    df = pd.read_csv(channel_map, sep=r'\s+', names = ['offlchan', 'detid', 'detelement', 'crate', 'slot', 'stream', 'streamchan', 'plane', 'chan_in_plane', 'femb', 'asic ', 'asicchan'])
+
+    df23 = df[df['detelement'] < 4]
+
+    df_map = df23[['crate','slot', 'streamchan', 'detelement', 'plane', 'chan_in_plane']]
+    df_map.columns = ["Crate", "AMC", "AMC_channel", "CRP", "view_type", "view_channel"]
+    return df_map
 
 
 def create_db(oksfile : str, include_files : list[str]) -> conffwk.Configuration:
@@ -53,71 +63,68 @@ def calculate_amc_net_info(crate, slot):
 
 def create_det_connections(args : argparse.Namespace):
     # key is crate number, so 10.73.(n+32).128, value is the number of AMCs each crate has installed.
-    mapping = get_mapping(args.det_name, args.sid)
 
-    for crp in pd.unique(mapping["CRP"]):
-        amc_map = {}
-        crp_map = mapping[mapping["CRP"] == crp]
-        for crate in pd.unique(crp_map["Crate"]):
-            amc_map[crate] = pd.unique(crp_map[crp_map["Crate"] == crate]["AMC"])
+    if args.channel_map:
+        mapping = get_mapping_from_channel_map(args.channel_map)
+    else:
+        mapping = get_mapping(args.det_id, args.sid)
+    print(mapping)
 
-        db = create_db(f"crp{crp}-det-connections", get_includes(args.db_path))
+    db = create_db(f"crp23-det-senders", get_includes())
 
-        d2d = db.create_obj("DetectorToDaqConnection", f"{args.det_name}-connections")
+    sid_counters = {i : i * 100 for i in pd.unique(mapping["CRP"])}
+    for e, cg in enumerate([[0, 1, 2, 6, 7], [3, 4, 5, 8, 9]]):
+        streams = []
+        resource = db.create_obj("ResourceSetAND", f"{args.det_name}-senders-crate-{'-'.join([str(c) for c in cg])}")
+        for crate in cg:
+            crate_map = mapping[mapping["Crate"] == crate]
+            amcs = pd.unique(crate_map["AMC"])
+            for amc in amcs:
+                name = f"crate{crate}-slot{amc}"
+                base_sid = pd.unique(crate_map[crate_map["AMC"] == amc]["CRP"])[0]
+                sid_counters[base_sid] += 1
 
-        # create the AMC related objects
-        con = []
-        resources = {c : db.create_obj("ResourceSetAND", f"{args.det_name}-senders-crp{crp}-crate{c}") for c in amc_map}
-
-        base_sid = 100 * crp
-        for n, amcs in amc_map.items():
-            resource = resources[n]
-            ddss = []
-            for m in amcs:
-                base_sid += 1
-                
-                amc_net_info = calculate_amc_net_info(n, m)
-                geo = db.create_obj(class_name = "GeoId", uid = f"geoId-{args.det_name}-amc-{base_sid}")
+                amc_net_info = calculate_amc_net_info(crate, amc)
+                geo = db.create_obj(class_name = "GeoId", uid = f"geoId-{args.det_name}-amc-{sid_counters[base_sid]}")
                 geo["detector_id"] = args.det_id # channel map may be required for this ()
-                geo["slot_id"] = m
+                geo["crate_id"] = crate
+                geo["slot_id"] = amc
 
-                ds = db.create_obj(class_name = "DetectorStream", uid = f"DetStream-{base_sid}")
-                ds["source_id"] = base_sid
+                ds = db.create_obj(class_name = "DetectorStream", uid = f"DetStream-{sid_counters[base_sid]}")
+                ds["source_id"] = sid_counters[base_sid]
                 ds["geo_id"] = geo
 
-                nw_send = db.create_obj(class_name = "NetworkInterface", uid = f"nw-{args.det_name}-amc-{base_sid}-10g")
+                nw_send = db.create_obj(class_name = "NetworkInterface", uid = f"nw-{args.det_name}-amc-{name}-10g")
                 nw_send["mac_address"] = amc_net_info["mac_10g"]
                 nw_send["ip_address"] = [amc_net_info["ip_10g"]]
                 nw_send["network_name"] = "Data"
                 
-                nw_rec = db.create_obj(class_name = "NetworkInterface", uid = f"nw-{args.det_name}-amc-{base_sid}-1g")
+                nw_rec = db.create_obj(class_name = "NetworkInterface", uid = f"nw-{args.det_name}-amc-{name}-1g")
                 nw_rec["mac_address"] = amc_net_info["mac_1g"]
                 nw_rec["ip_address"] = [amc_net_info["ip_1g"]]
                 nw_rec["network_name"] = "Control"
 
-                dds = db.create_obj(class_name = "TdeAmcDetDataSender", uid = f"dds-{args.det_name}-amc-{base_sid}")
-                dds["port"] = 54321 + m + 1
-                dds["control_host"] = f"np02-amc-{base_sid}" # This should be the source ID
+                sender_names = sid_counters[base_sid] if args.sid_suffix else name
+                dds = db.create_obj(class_name = "TdeAmcDetDataSender", uid = f"dds-{args.det_name}-amc-{sender_names}")
+                dds["port"] = 54321 + amc + 1
+                dds["control_host"] = f"np02-amc-{sid_counters[base_sid]}" # This should be the source ID
                 dds["contains"] = [ds] # This should be the DetStream object
                 dds["uses"] = nw_send
                 dds["control_endpoint"] = nw_rec
-                ddss.append(dds)
-
-            resource["contains"] = ddss
-            con.append(resource)
-
-        d2d["contains"] = con
-        db.commit()
+                streams.append(dds)
+        resource["contains"] = streams
+    db.commit()
     return
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("Generate configuration objects for TDE readout.")
 
-    parser.add_argument(dest = "db_path", type = str, help = "path to oks database.")
-    parser.add_argument("-f", "--frontend", dest = "det_name", type = str, choices = ["tde", "tde-testcrate"], default = "tde-testcrate", help = "frontend components to readout.")
+    parser.add_argument("-f", "--frontend", dest = "det_name", type = str, choices = ["tde", "tde-testcrate"], default = "tde", help = "frontend components to readout.")
     parser.add_argument("-s", "--source-id", dest = "sid", type = int, default = 2, help = "base source ID number.")
     parser.add_argument("-D", "--det_id", dest = "det_id", type = int, default = 11, help = "detector id.")
+    parser.add_argument("--sid_suffix", dest = "sid_suffix", action = "store_true", help = "use source ID as the suffix for the AMCDetDataSenders.")
+    parser.add_argument("-c", "--channel_map", dest = "channel_map", type = str, default = None, help = "ProtoDUNE channel map to infer the Crate/AMC mapping.")
 
     args = parser.parse_args()
     print(args)
