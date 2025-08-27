@@ -79,7 +79,6 @@ def main(det_name, source_id, det_id, sid_suffix, channel_map):
     sid_counters = {i : i * 100 for i in pd.unique(mapping["CRP"])}
     for cg in [[0, 1, 2, 6, 7], [3, 4, 5, 8, 9]]:
         streams = []
-        # resource = db.create_obj("NetworkDetectorToDaqConnection", f"{det_name}-senders-crate-{'-'.join([str(c) for c in cg])}")
         for crate in cg:
             crate_map = mapping[mapping["Crate"] == crate]
             amcs = pd.unique(crate_map["AMC"])
@@ -116,7 +115,6 @@ def main(det_name, source_id, det_id, sid_suffix, channel_map):
                 dds["control_endpoint"] = nw_rec
                 dds["streams"] = [ds]
                 streams.append(dds)
-        # resource["net_senders"] = streams
     db.commit()
     return
 
