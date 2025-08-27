@@ -51,8 +51,9 @@ std::vector<uint8_t> AMCController::send_cmd(const std::vector<uint8_t>& cmd) {
       reply = client.send_wrq(cmd);
   
   } catch (const std::exception& e) {
-    ers::error(AMCCommandIssue(ERS_HERE, m_ctrl_ip, m_data_port, e.what()));
-    //   std::cerr << "Exception: " << e.what() << "\n";
+    auto msg = AMCCommandIssue(ERS_HERE, m_ctrl_ip, m_data_port, e.what());
+    ers::error(msg);
+    throw msg;
   }
   return reply;
 }

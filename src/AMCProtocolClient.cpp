@@ -60,16 +60,18 @@ AMCProtocolClient::send_request(TFTPOpCode opcode, const std::vector<uint8_t>& p
     }
 
     if (ec) {
-        throw AMCProtocolIssue(ERS_HERE, m_log_prefix, "TFTP receive error: " + ec.message());
+        auto exc = AMCProtocolIssue(ERS_HERE, m_log_prefix, "TFTP receive error: " + ec.message());
+        throw exc; 
     }
 
     if (len < 4) {
         throw AMCProtocolIssue(ERS_HERE, m_log_prefix, "Invalid TFTP reply: too short");
     }
-    if (reply.size() < 4)
-        throw std::runtime_error("Packet too short to be valid");
+    if (reply.size() < 4) {
+        throw AMCProtocolIssue(ERS_HERE, m_log_prefix, "Packet too short to be valid");
+    }
 
-    // Parse returin code
+    // Parse return code
     boost::endian::big_uint16_t rpl_opcode_be;
     std::memcpy(&rpl_opcode_be, reply.data(), sizeof(rpl_opcode_be));
 

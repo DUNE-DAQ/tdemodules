@@ -47,34 +47,35 @@ TDEAMCModule::generate_opmon_data()
 void
 TDEAMCModule::do_conf(const data_t& /* do not pass an argument*/ )
 {
-    //! placehodler for now, source id, ip and port should come from the configuration manager
-    //! for now, have one AMCModule per AMC.
+  //! placehodler for now, source id, ip and port should come from the configuration manager
+  //! for now, have one AMCModule per AMC.
 
-    uint32_t data_port = m_dal->get_amc()->get_port();
-    std::string ip = m_dal->get_amc()->get_control_endpoint()[0].get_ip_address()[0];
+  uint32_t data_port = m_dal->get_amc()->get_port();
+  std::string ip = m_dal->get_amc()->get_control_endpoint()[0].get_ip_address()[0];
 
-    // int amc_id = 2;
-    // std::string ip = "10.73.32." + std::to_string(amc_id);
-    // int data_port = 54321 + amc_id;
+  // Create the AMC controller
+  m_ctrl = std::make_unique<AMCController>(ip, data_port);
+  std::cout << "Created conroller for AMC " << ip << std::endl;
 
-    // Create the AMC controller
-    m_ctrl = std::make_unique<AMCController>(ip, data_port);
-    std::cout << "Created conroller for AMC " << ip << std::endl;
-    m_ctrl->card_status();
+  // check the AMC can be communicated with
+  try {
+      m_ctrl->card_status();
+  } catch (const std::exception& e) {
+      throw e;
+  }
 
-    // probably want some checks here, e.g. (AMC is pingable?)
 }
 
 void
 TDEAMCModule::do_start(const data_t& /* do not pass an argument*/ )
 {
-    m_ctrl->card_start();
+  m_ctrl->card_start();
 }
 
 void
 TDEAMCModule::do_stop(const data_t& /* do not pass an argument*/ )
 {
-    m_ctrl->card_stop();
+  m_ctrl->card_stop();
 }
 
 } // namespace dunedaq::tdemodules
