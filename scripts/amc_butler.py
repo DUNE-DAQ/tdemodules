@@ -153,12 +153,13 @@ def main(crate_ip, amcs, cmd):
         #     print(f"- [red]Could not arping NIC data at IP: {nic_ip}[/red]")
 
     else:
-        controllers = { amc_ip:tdemodules.AMCController(amc_ip, 54321 + (i + 1)) for i,amc_ip in amc_ips.items() }
-        print(controllers)
-        cmds = Commands(controllers)
-        getattr(cmds, cmd)()
-
-    return
+        if cmd:
+            controllers = { amc_ip:tdemodules.AMCController(amc_ip, 54321 + (i + 1)) for i,amc_ip in amc_ips.items() }
+            print(controllers)
+            cmds = Commands(controllers)
+            getattr(cmds, cmd)()
+        else:
+            print("no command was provided.")
 
     return
 
