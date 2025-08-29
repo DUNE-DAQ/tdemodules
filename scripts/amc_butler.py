@@ -50,6 +50,11 @@ class Commands():
         return
 
 
+
+def arping(amc_ip):
+    return sh.arping(["-c", '1', amc_ip])
+
+
 @click.command()
 @click.argument('crate_ip', type=str)
 @click.option('-a', '--amcs', type=int, multiple=True, default=[i for i in range(10)])
@@ -65,36 +70,87 @@ def main(crate_ip, amcs, cmd):
         exit(1)
 
     crate_subnet = crate_ip.rsplit(".", 1)[0]
+    nic_ip = crate_subnet+'.129'
 
     amc_ips = { i: crate_subnet + f".{i + 1}" for i in amcs}
 
     if cmd=='arping':
-        # Arping the crate, just for completeness
-        try:
-            r = sh.arping(["-c", '1', crate_ip])
-            print(f"- [green]uTCA crate {crate_ip} responded to arping[/green]")
-            print(r)
-        except sh.ErrorReturnCode as e:
-            print(f"- [red]Could not arping uTCA Crate at IP: {crate_ip}[/red]")
+
+
+        devices = {
+            'crate': crate_ip,
+            'nic': nic_ip
+        }
+
+        devices.update(amc_ips)
+
         
-        # Arping the AMCs
-        for amc, amc_ip in amc_ips.items():
-            try:
-                r = sh.arping(["-c", '1', amc_ip])
-                print(f"- [green]AMC {amc} ({amc_ip}) responded to arping[/green]")
-                print(r)
+        
 
-            except sh.ErrorReturnCode as e:
-                print(f"- Could not arping AMC {amc} at IP: {amc_ip}")
+        # # Arping the crate, just for completeness
+        # try:
+        #     r = sh.arping(["-c", '1', crate_ip])
+        #     print(f"- [green]uTCA crate {crate_ip} responded to arping[/green]")
+        #     print(r)
+        # except sh.ErrorReturnCode as e:
+        #     print(f"- [red]Could not arping uTCA Crate at IP: {crate_ip}[/red]")
+        
 
-        # Arping the NIC
-        nic_ip = crate_subnet+'.129'
+
+
+        from concurrent.futures import ProcessPoolExecutor, as_completed
+        import subprocess as sp
+        import sys
+
+        failures = []
+        MAX_WORKERS=10
         try:
-            r = sh.arping(["-c", '1', nic_ip])
-            print(f"- [green]NIC data sink {nic_ip} responded to arping[/green]")
-            print(r)
-        except sh.ErrorReturnCode as e:
-            print(f"- [red]Could not arping NIC data at IP: {nic_ip}[/red]")
+    
+            with ProcessPoolExecutor(max_workers=MAX_WORKERS) as pool:
+                futures = {pool.submit(arping, amc_ip):(amc, amc_ip) for amc, amc_ip in devices.items()}
+                for fut in as_completed(futures):
+                    amc, amc_ip = futures[fut]
+                    try:
+                        rc = fut.result()
+                    except sp.TimeoutExpired:
+                        print(f"[TIMEOUT] {a}", file=sys.stderr)
+                        failures.append((a, "timeout"))
+                        continue
+                    except sh.ErrorReturnCode as e:
+                        print(f"- [red]Could not arping device at IP: {amc_ip}[/red]")
+                        continue
+                    except Exception as ex:
+                        print(f"[EXCEPTION] {a}: {ex}", file=sys.stderr)
+                        failures.append((a, "exception"))
+                        continue
+
+                    print(f"- [green]AMC {amc} ({amc_ip}) responded to arping[/green]")
+
+        except KeyboardInterrupt:
+            print("\nInterrupted. Shutting down workers…", file=sys.stderr)
+            # ProcessPool will terminate on context exit
+
+
+
+
+        # # Arping the AMCs
+        # for amc, amc_ip in amc_ips.items():
+        #     try:
+        #         r = sh.arping(["-c", '1', amc_ip])
+        #         print(f"- [green]AMC {amc} ({amc_ip}) responded to arping[/green]")
+        #         print(r)
+
+        #     except sh.ErrorReturnCode as e:
+        #         print(f"- Could not arping AMC {amc} at IP: {amc_ip}")
+
+        # # Arping the NIC
+        # nic_ip = crate_subnet+'.129'
+        # try:
+        #     r = sh.arping(["-c", '1', nic_ip])
+        #     print(f"- [green]NIC data sink {nic_ip} responded to arping[/green]")
+        #     print(r)
+        # except sh.ErrorReturnCode as e:
+        #     print(f"- [red]Could not arping NIC data at IP: {nic_ip}[/red]")
 
     else:
         controllers = { amc_ip:tdemodules.AMCController(amc_ip, 54321 + (i + 1)) for i,amc_ip in amc_ips.items() }
