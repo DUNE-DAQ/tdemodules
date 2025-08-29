@@ -51,8 +51,7 @@ class Commands():
 
 
 
-def arping(amc_ip):
-    return sh.arping(["-c", '1', amc_ip])
+
 
 
 @click.command()
@@ -82,7 +81,7 @@ def main(crate_ip, amcs, cmd):
             'nic': nic_ip
         }
 
-        devices.update(amc_ips)
+        devices.update({f'AMC {amc}': amc_ip for amc, amc_ip in amc_ips.items()})
 
         
         
@@ -98,18 +97,22 @@ def main(crate_ip, amcs, cmd):
 
 
 
-        from concurrent.futures import ProcessPoolExecutor, as_completed
+        from concurrent.futures import ThreadPoolExecutor, as_completed
         import subprocess as sp
         import sys
 
         failures = []
         MAX_WORKERS=10
+
+        def arping(dev_ip):
+            return sh.arping(["-c", '1', dev_ip])
+
         try:
     
-            with ProcessPoolExecutor(max_workers=MAX_WORKERS) as pool:
-                futures = {pool.submit(arping, amc_ip):(amc, amc_ip) for amc, amc_ip in devices.items()}
+            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+                futures = {pool.submit(arping, dev_ip):(dev, dev_ip) for dev, dev_ip in devices.items()}
                 for fut in as_completed(futures):
-                    amc, amc_ip = futures[fut]
+                    dev, dev_ip = futures[fut]
                     try:
                         rc = fut.result()
                     except sp.TimeoutExpired:
@@ -117,14 +120,14 @@ def main(crate_ip, amcs, cmd):
                         failures.append((a, "timeout"))
                         continue
                     except sh.ErrorReturnCode as e:
-                        print(f"- [red]Could not arping device at IP: {amc_ip}[/red]")
+                        print(f"- [red]Could not arping {dev} at IP: {dev_ip}[/red]")
                         continue
                     except Exception as ex:
                         print(f"[EXCEPTION] {a}: {ex}", file=sys.stderr)
                         failures.append((a, "exception"))
                         continue
 
-                    print(f"- [green]AMC {amc} ({amc_ip}) responded to arping[/green]")
+                    print(f"- [green]{dev} ({dev_ip}) responded to arping[/green]")
 
         except KeyboardInterrupt:
             print("\nInterrupted. Shutting down workers…", file=sys.stderr)
