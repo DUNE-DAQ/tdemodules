@@ -45,7 +45,7 @@ TDEAMCModule::generate_opmon_data()
 }
 
 void
-TDEAMCModule::do_conf(const data_t& /* do not pass an argument*/ )
+TDEAMCModule::do_conf(const CommandData_t& /* do not pass an argument*/)
 {
     //! placehodler for now, source id, ip and port should come from the configuration manager
     //! for now, have one AMCModule per AMC.
@@ -66,13 +66,13 @@ TDEAMCModule::do_conf(const data_t& /* do not pass an argument*/ )
 }
 
 void
-TDEAMCModule::do_start(const data_t& /* do not pass an argument*/ )
+TDEAMCModule::do_start(const CommandData_t& /* do not pass an argument*/)
 {
     m_ctrl->card_start();
 }
 
 void
-TDEAMCModule::do_stop(const data_t& /* do not pass an argument*/ )
+TDEAMCModule::do_stop(const CommandData_t& /* do not pass an argument*/)
 {
     m_ctrl->card_stop();
 }
