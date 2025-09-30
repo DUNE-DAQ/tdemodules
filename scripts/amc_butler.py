@@ -10,6 +10,7 @@ Description: Check the status of an AMC or multiple AMCs to ensure they can be r
 import subprocess
 import time
 import sh
+import re
 import click
 from rich import print
 
@@ -50,6 +51,10 @@ class Commands():
         return
 
 
+
+
+
+
 @click.command()
 @click.argument('crate_ip', type=str)
 @click.option('-a', '--amcs', type=int, multiple=True, default=[i for i in range(10)])
@@ -65,45 +70,66 @@ def main(crate_ip, amcs, cmd):
         exit(1)
 
     crate_subnet = crate_ip.rsplit(".", 1)[0]
+    nic_ip = crate_subnet+'.129'
 
     amc_ips = { i: crate_subnet + f".{i + 1}" for i in amcs}
 
     if cmd=='arping':
-        # Arping the crate, just for completeness
-        try:
-            r = sh.arping(["-c", '1', crate_ip])
-            print(f"- [green]uTCA crate {crate_ip} responded to arping[/green]")
-            print(r)
-        except sh.ErrorReturnCode as e:
-            print(f"- [red]Could not arping uTCA Crate at IP: {crate_ip}[/red]")
+
+
+        devices = {
+            'crate': crate_ip,
+            'nic': nic_ip
+        }
+
+        devices.update({f'AMC {amc}': amc_ip for amc, amc_ip in amc_ips.items()})
+
         
-        # Arping the AMCs
-        for amc, amc_ip in amc_ips.items():
-            try:
-                r = sh.arping(["-c", '1', amc_ip])
-                print(f"- [green]AMC {amc} ({amc_ip}) responded to arping[/green]")
-                print(r)
 
-            except sh.ErrorReturnCode as e:
-                print(f"- [red]Could not arping AMC {amc} at IP: {amc_ip}[/red]")
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        import subprocess as sp
+        import sys
 
-        # Arping the NIC
-        nic_ip = crate_subnet+'.129'
+        failures = []
+        MAX_WORKERS=10
+        def arping(amc_ip):
+            return sh.arping(["-c", '1', amc_ip])
         try:
-            r = sh.arping(["-c", '1', nic_ip])
-            print(f"- [green]NIC data sink {nic_ip} responded to arping[/green]")
-            print(r)
-        except sh.ErrorReturnCode as e:
-            print(f"- [red]Could not arping NIC data at IP: {nic_ip}[/red]")
+    
+            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+                futures = {pool.submit(arping, amc_ip):(amc, amc_ip) for amc, amc_ip in devices.items()}
+                for fut in as_completed(futures):
+                    amc, amc_ip = futures[fut]
+                    try:
+                        rc = fut.result()
+                    except sp.TimeoutExpired:
+                        print(f"[TIMEOUT] {amc}", file=sys.stderr)
+                        failures.append((amc, "timeout"))
+                        continue
+                    except sh.ErrorReturnCode as e:
+                        print(f"- [red]Could not arping device at IP: {amc_ip}[/red]")
+                        continue
+                    except Exception as ex:
+                        print(f"[EXCEPTION] {amc}: {ex}", file=sys.stderr)
+                        failures.append((amc, "exception"))
+                        continue
 
+                    match = re.search(r"Unicast reply from\s+([\d.]+)\s+\[([0-9A-Fa-f:]{17})\]", rc)
+                    if match:
+                        ipaddr, mac = match.group(1), match.group(2)
+                    print(f"- [green]{amc} ({amc_ip}) responded to arping : mac {mac}[/green]")
+
+            
+        except KeyboardInterrupt:
+            print("\nInterrupted. Shutting down workers…", file=sys.stderr)
+            # ProcessPool will terminate on context exit
     else:
-        if cmd:
-            controllers = { amc_ip:tdemodules.AMCController(amc_ip, 54321 + (i + 1)) for i,amc_ip in amc_ips.items() }
-            print(controllers)
-            cmds = Commands(controllers)
-            getattr(cmds, cmd)()
-        else:
-            print("no command was provided.")
+        controllers = { amc_ip:tdemodules.AMCController(amc_ip, 54321 + (i + 1)) for i,amc_ip in amc_ips.items() }
+        print(controllers)
+        cmds = Commands(controllers)
+        getattr(cmds, cmd)()
+
+    return
 
     return
 
