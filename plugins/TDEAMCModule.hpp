@@ -52,6 +52,7 @@ private:
   void do_conf(const CommandData_t&);
   void do_start(const CommandData_t&);
   void do_stop(const CommandData_t&);
+  void do_scrap(const CommandData_t&);
 
   // TO tdemodules DEVELOPERS: PLEASE DELETE THIS FOLLOWING COMMENT AFTER READING IT 
   // m_total_amount and m_amount_since_last_get_info_call are examples
