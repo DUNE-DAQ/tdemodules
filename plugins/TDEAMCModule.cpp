@@ -33,6 +33,7 @@ void
 TDEAMCModule::init(std::shared_ptr<appfwk::ConfigurationManager> mcfg)
 {
     m_dal = mcfg->get_dal<appmodel::TDEAMCModule>(get_name());
+    m_session = mcfg->get_session();
 }
 
 void
@@ -47,20 +48,18 @@ TDEAMCModule::generate_opmon_data()
 void
 TDEAMCModule::do_conf(const CommandData_t& /* do not pass an argument*/)
 {
-    //! placehodler for now, source id, ip and port should come from the configuration manager
-    //! for now, have one AMCModule per AMC.
-
     uint32_t data_port = m_dal->get_amc()->get_port();
     std::string ip = m_dal->get_amc()->get_control_endpoint()[0].get_ip_address()[0];
-
-    // int amc_id = 2;
-    // std::string ip = "10.73.32." + std::to_string(amc_id);
-    // int data_port = 54321 + amc_id;
 
     // Create the AMC controller
     m_ctrl = std::make_unique<AMCController>(ip, data_port);
     std::cout << "Created conroller for AMC " << ip << std::endl;
-    m_ctrl->card_status();
+    
+    if(!m_dal->get_amc()->is_disabled(*m_session))
+    {
+        m_ctrl->card_stop(); // stop AMC from taking data in case TDE readout was not gracefully stopped
+        m_ctrl->card_status();
+    }
 
     // probably want some checks here, e.g. (AMC is pingable?)
 }
@@ -68,13 +67,28 @@ TDEAMCModule::do_conf(const CommandData_t& /* do not pass an argument*/)
 void
 TDEAMCModule::do_start(const CommandData_t& /* do not pass an argument*/)
 {
-    m_ctrl->card_start();
+    if(!m_dal->get_amc()->is_disabled(*m_session))
+    {
+        m_ctrl->card_start();
+    }
 }
 
 void
 TDEAMCModule::do_stop(const CommandData_t& /* do not pass an argument*/)
 {
-    m_ctrl->card_stop();
+    if(!m_dal->get_amc()->is_disabled(*m_session))
+    {
+        m_ctrl->card_stop();
+    }
+}
+
+void
+TDEAMCModule::do_scrap(const CommandData_t& /* do not pass an argument*/)
+{
+    if(!m_dal->get_amc()->is_disabled(*m_session))
+    {
+        m_ctrl->card_stop();
+    }
 }
 
 } // namespace dunedaq::tdemodules
