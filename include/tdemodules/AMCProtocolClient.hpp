@@ -21,6 +21,27 @@ ERS_DECLARE_ISSUE(
 
 ERS_DECLARE_ISSUE(
     tdemodules, 
+    TFTPReceiveError,
+    prefix << "TFTPReceiveError: " << text,
+    ((std::string)prefix)((std::string)text)
+);
+
+ERS_DECLARE_ISSUE(
+    tdemodules, 
+    TFTPReplyTooShort,
+    prefix << "TFTPReplyTooShort: " << text,
+    ((std::string)prefix)((std::string)text)
+);
+
+ERS_DECLARE_ISSUE(
+    tdemodules, 
+    PacketError,
+    prefix << "PacketError: " << text,
+    ((std::string)prefix)((std::string)text)
+);
+
+ERS_DECLARE_ISSUE(
+    tdemodules, 
     AMCResponseErr,
     prefix << "Received Error packet:" << "\n" << "Error code:" << code << "\nMessage: " << text,
     ((std::string)prefix)((uint16_t)code)((std::string)text)

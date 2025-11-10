@@ -4,6 +4,7 @@
 
 #include <iostream>
 #include <fmt/core.h>
+#include <typeinfo>
 
 #include "logging/Logging.hpp"
 
@@ -50,8 +51,18 @@ std::vector<uint8_t> AMCController::send_cmd(const std::vector<uint8_t>& cmd) {
   
       reply = client.send_wrq(cmd);
   
-  } catch (const std::exception& e) {
-    ers::info(AMCCommandIssue(ERS_HERE, m_ctrl_ip, m_data_port, e.what()));
+  }
+  catch (const std::exception& e) {
+    auto msg = AMCCommandIssue(ERS_HERE, m_ctrl_ip, m_data_port, e.what());
+    if (typeid(e) == typeid(TFTPReceiveError)) {
+      m_timeout_counter ++;
+      if (m_timeout_counter > m_timeout_counter_threshold) {
+        ers::warning(msg); // treat TFTP receive errors from timeouts as warnings
+      }
+    }
+    else {
+      ers::error(msg);
+    }
   }
   return reply;
 }

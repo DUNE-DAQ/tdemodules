@@ -60,14 +60,14 @@ AMCProtocolClient::send_request(TFTPOpCode opcode, const std::vector<uint8_t>& p
     }
 
     if (ec) {
-        throw AMCProtocolIssue(ERS_HERE, m_log_prefix, "TFTP receive error: " + ec.message());
+        throw TFTPReceiveError(ERS_HERE, m_log_prefix, "TFTP receive error: " + ec.message());
     }
 
     if (len < 4) {
-        throw AMCProtocolIssue(ERS_HERE, m_log_prefix, "Invalid TFTP reply: too short");
+        throw TFTPReplyTooShort(ERS_HERE, m_log_prefix, "Invalid TFTP reply: too short");
     }
     if (reply.size() < 4)
-        throw std::runtime_error("Packet too short to be valid");
+        throw PacketError(ERS_HERE, m_log_prefix, "Packet too short to be valid"); 
 
     // Parse returin code
     boost::endian::big_uint16_t rpl_opcode_be;
@@ -79,12 +79,12 @@ AMCProtocolClient::send_request(TFTPOpCode opcode, const std::vector<uint8_t>& p
     switch (rpl_opcode) {
         case TFTPOpCode::DAT: {
             if (reply.size() < sizeof(TFTP_Data_Header))
-                throw AMCProtocolIssue(ERS_HERE, m_log_prefix, "Incomplete DATA packet");
+                throw PacketError(ERS_HERE, m_log_prefix, "Incomplete Data packet");
 
             TFTP_Data_Header header;
             std::memcpy(&header, reply.data(), sizeof(header));
 
-            TLOG() << "Received DATA packet:\n" <<
+            TLOG() << "Received Data packet:\n" <<
                         "  Block #: "<< static_cast<uint16_t>(header.block) << "\n" <<
                         "  Payload size: "<< reply.size() - sizeof(header) <<" bytes\n"; 
 

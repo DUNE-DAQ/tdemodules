@@ -46,6 +46,9 @@ class AMCController {
     std::vector<uint8_t> m_stop_cmd;
     std::vector<uint8_t> m_reset_cmd;
   
+    std::uint32_t m_timeout_counter = 0;
+    std::uint32_t m_timeout_counter_threshold;
+
     std::vector<uint8_t> send_cmd(const std::vector<uint8_t>& cmd);  
   };
         
