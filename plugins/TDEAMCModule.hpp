@@ -66,6 +66,7 @@ private:
   std::atomic<int>     m_amount_since_last_call {0};
 
   const appmodel::TDEAMCModule* m_dal;
+  bool m_is_enabled;
 };
 
 } // namespace dunedaq::tdemodules
