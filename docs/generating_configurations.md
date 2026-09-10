@@ -51,7 +51,7 @@ A few objects need to be created:
 - DPDKPortConfiguration
 - DPDKReceiver
 - NetworkDevice
-- ProcessingResource (lcores)
+- HostCores (lcores)
 - TDEAMCModuleConf
 - TDECrateApplication"
 
