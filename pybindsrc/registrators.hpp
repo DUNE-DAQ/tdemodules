@@ -8,7 +8,6 @@
  * received with this code.
  */
 
-
 #ifndef TDEMODULES_PYBINDSRC_REGISTRATORS_HPP_
 #define TDEMODULES_PYBINDSRC_REGISTRATORS_HPP_
 
@@ -16,7 +15,8 @@
 
 namespace dunedaq::tdemodules::python {
 
-  void register_amc(pybind11::module&);
+void
+register_amc(pybind11::module&);
 
 }
 
