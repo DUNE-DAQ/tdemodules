@@ -9,10 +9,10 @@
  */
 
 #include "appmodel/TDEAMCModule.hpp"
-#include "appmodel/TdeAmcDetDataSender.hpp"
-#include "appmodel/NWDetDataSender.hpp"
-#include "confmodel/NetworkInterface.hpp"
 #include "TDEAMCModule.hpp"
+#include "appmodel/NWDetDataSender.hpp"
+#include "appmodel/TdeAmcDetDataSender.hpp"
+#include "confmodel/NetworkInterface.hpp"
 #include "tdemodules/AMCController.hpp"
 
 #include "tdemodules/opmon/tdeamcmodule_info.pb.h"
@@ -32,7 +32,7 @@ TDEAMCModule::TDEAMCModule(const std::string& name)
 void
 TDEAMCModule::init(std::shared_ptr<appfwk::ConfigurationManager> mcfg)
 {
-    m_dal = mcfg->get_dal<appmodel::TDEAMCModule>(get_name());
+  m_dal = mcfg->get_dal<appmodel::TDEAMCModule>(get_name());
 }
 
 void
@@ -47,34 +47,34 @@ TDEAMCModule::generate_opmon_data()
 void
 TDEAMCModule::do_conf(const CommandData_t& /* do not pass an argument*/)
 {
-    //! placehodler for now, source id, ip and port should come from the configuration manager
-    //! for now, have one AMCModule per AMC.
+  //! placehodler for now, source id, ip and port should come from the configuration manager
+  //! for now, have one AMCModule per AMC.
 
-    uint32_t data_port = m_dal->get_amc()->get_port();
-    std::string ip = m_dal->get_amc()->get_control_endpoint()[0].get_ip_address()[0];
+  uint32_t data_port = m_dal->get_amc()->get_port();
+  std::string ip = m_dal->get_amc()->get_control_endpoint()[0].get_ip_address()[0];
 
-    // int amc_id = 2;
-    // std::string ip = "10.73.32." + std::to_string(amc_id);
-    // int data_port = 54321 + amc_id;
+  // int amc_id = 2;
+  // std::string ip = "10.73.32." + std::to_string(amc_id);
+  // int data_port = 54321 + amc_id;
 
-    // Create the AMC controller
-    m_ctrl = std::make_unique<AMCController>(ip, data_port);
-    std::cout << "Created conroller for AMC " << ip << std::endl;
-    m_ctrl->card_status();
+  // Create the AMC controller
+  m_ctrl = std::make_unique<AMCController>(ip, data_port);
+  std::cout << "Created conroller for AMC " << ip << std::endl;
+  m_ctrl->card_status();
 
-    // probably want some checks here, e.g. (AMC is pingable?)
+  // probably want some checks here, e.g. (AMC is pingable?)
 }
 
 void
 TDEAMCModule::do_start(const CommandData_t& /* do not pass an argument*/)
 {
-    m_ctrl->card_start();
+  m_ctrl->card_start();
 }
 
 void
 TDEAMCModule::do_stop(const CommandData_t& /* do not pass an argument*/)
 {
-    m_ctrl->card_stop();
+  m_ctrl->card_stop();
 }
 
 } // namespace dunedaq::tdemodules

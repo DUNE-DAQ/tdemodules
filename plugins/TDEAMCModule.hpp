@@ -11,8 +11,8 @@
 #ifndef TDEMODULES_PLUGINS_TDEAMCMODULE_HPP_
 #define TDEMODULES_PLUGINS_TDEAMCMODULE_HPP_
 
-#include "appmodel/TDEAMCModule.hpp"
 #include "appfwk/DAQModule.hpp"
+#include "appmodel/TDEAMCModule.hpp"
 #include "tdemodules/AMCController.hpp"
 
 #include <atomic>
@@ -46,14 +46,14 @@ private:
   // register an action that will be executed upon reception of the
   // command. do_conf is a very common example of this; in
   // TDEAMCModule.cpp you would implement do_conf so that members of
-  // TDEAMCModule get assigned values from a configuration passed as 
+  // TDEAMCModule get assigned values from a configuration passed as
   // an argument and originating from the CCM system.
 
   void do_conf(const CommandData_t&);
   void do_start(const CommandData_t&);
   void do_stop(const CommandData_t&);
 
-  // TO tdemodules DEVELOPERS: PLEASE DELETE THIS FOLLOWING COMMENT AFTER READING IT 
+  // TO tdemodules DEVELOPERS: PLEASE DELETE THIS FOLLOWING COMMENT AFTER READING IT
   // m_total_amount and m_amount_since_last_get_info_call are examples
   // of variables whose values get reported to OpMon
   // (https://github.com/mozilla/opmon) each time get_info() is
@@ -62,8 +62,8 @@ private:
   // obviously you'd want to replace this "in real life"
 
   std::unique_ptr<AMCController> m_ctrl;
-  std::atomic<int64_t> m_total_amount {0};
-  std::atomic<int>     m_amount_since_last_call {0};
+  std::atomic<int64_t> m_total_amount{ 0 };
+  std::atomic<int> m_amount_since_last_call{ 0 };
 
   const appmodel::TDEAMCModule* m_dal;
 };
